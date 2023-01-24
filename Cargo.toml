@@ -1,0 +1,16 @@
+[package]
+name = "rabbitink"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+bindgen = "0.63.0"
+
+[dependencies]
+anyhow = "1.0.68"
+env_logger = "0.10.0"
+opencv = "0.75"
+log = "0.4.17"
+nix = { version = "0.26.2", features = ["ioctl", "fs"] }
