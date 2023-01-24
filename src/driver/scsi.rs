@@ -17,6 +17,7 @@ impl Drop for Device {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl Device {
     pub fn open(path: &Path) -> nix::Result<Device> {
         let fd = fcntl::open(path, fcntl::OFlag::O_RDWR | fcntl::OFlag::O_NONBLOCK, Mode::empty())?;
@@ -95,5 +96,24 @@ impl Device {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+impl Device {
+    pub fn open(path: &Path) -> nix::Result<Device> {
+        unimplemented!();
+    }
+
+    pub fn io_write<CMD, DATA>(&mut self, cmd: &CMD, data: &DATA) -> nix::Result<()> {
+        unimplemented!();
+    }
+
+    pub fn io_write_gather<CMD>(&mut self, cmd: &CMD, data_list: &[(*const u8, usize)]) -> nix::Result<()> {
+        unimplemented!();
+    }
+
+    pub fn io_read<CMD, DATA>(&mut self, cmd: &CMD, data: &mut DATA) -> nix::Result<()> {
+        unimplemented!();
     }
 }
