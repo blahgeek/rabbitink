@@ -73,20 +73,22 @@ struct Sysinfo {
 
 #[repr(packed)]
 #[allow(dead_code)]
+#[derive(Default)]
 struct MemIOCmd {
-    hdr: BigEndianU16,
+    hdr: u8,
+    padding0: u8,
     addr: BigEndianU32,
     cmd: u8,
     len: BigEndianU16,
-    padding: [u8; 7],
+    padding1: [u8; 7],
 }
 
 #[repr(packed)]
 #[derive(Default)]
 #[allow(dead_code)]
 struct PMICControlCmd {
-    hdr: BigEndianU16,
-    padding0: u32,
+    hdr: u8,
+    padding1: [u8; 5],
     cmd: u8,
     vcom: BigEndianU16,
     vcom_set: u8,
@@ -157,7 +159,7 @@ impl IT8915 {
 
     pub fn pmic_control(&mut self, vcom: Option<u16>, power: Option<bool>) -> anyhow::Result<()> {
         let mut cmd = PMICControlCmd {
-            hdr: BigEndianU16::from(0x00fe),
+            hdr: 0xfe,
             cmd: 0xa3,
             ..PMICControlCmd::default()
         };
@@ -175,27 +177,34 @@ impl IT8915 {
         Ok(())
     }
 
-    // TODO: should not be public
-    pub fn read_mem<DATA>(&mut self, addr: u32, buf: &mut DATA) -> anyhow::Result<()> {
+    fn read_mem<DATA>(&mut self, addr: u32, buf: &mut DATA) -> anyhow::Result<()> {
         let cmd = MemIOCmd {
-            hdr: BigEndianU16::from(0x00fe),
+            hdr: 0xfe,
             addr: BigEndianU32::from(addr),
             cmd: 0x81,
             len: BigEndianU16::from(u16::try_from(std::mem::size_of::<DATA>()).expect("read_mem buf too long")),
-            padding: [0; 7],
+            ..MemIOCmd::default()
         };
         self.device.io_read(&cmd, buf)?;
         Ok(())
     }
 
+    // TODO: does not seem to work correctly yet
+    pub fn read_busy_state(&mut self) -> anyhow::Result<bool> {
+        let mut res = BigEndianU16::from(0);
+        self.read_mem(0x1224, &mut res)?;   // LUTAFSR
+        trace!("Read busy state: {:?}", res);
+        Ok(res.val() != 0)
+    }
+
     // TODO: should not be public
     pub fn write_mem<DATA>(&mut self, addr: u32, buf: &DATA) -> anyhow::Result<()> {
         let cmd = MemIOCmd {
-            hdr: BigEndianU16::from(0x00fe),
+            hdr: 0xfe,
             addr: BigEndianU32::from(addr),
             cmd: 0x82,
             len: BigEndianU16::from(u16::try_from(std::mem::size_of::<DATA>()).expect("write_mem buf too long")),
-            padding: [0; 7],
+            ..MemIOCmd::default()
         };
         self.device.io_write(&cmd, buf)?;
         Ok(())
@@ -248,7 +257,7 @@ impl IT8915 {
     }
 
     // TODO: mode
-    pub fn display_area(&mut self, region: opencv::core::Rect2i, mode: u32) -> anyhow::Result<()> {
+    pub fn display_area(&mut self, region: opencv::core::Rect2i, mode: u32, wait_ready: bool) -> anyhow::Result<()> {
         trace!("Displaying region {:?}, mode = {:?}", region, mode);
         let cmd: [u8; 16] = [
             0xfe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x94, 0x00,
@@ -260,7 +269,7 @@ impl IT8915 {
             y: BigEndianU32::from(region.y as u32),
             w: BigEndianU32::from(region.width as u32),
             h: BigEndianU32::from(region.height as u32),
-            wait_ready: BigEndianU32::from(0xffffffff),
+            wait_ready: BigEndianU32::from(if wait_ready { 1 } else { 0 }),
         };
 
         self.device.io_write(&cmd, &args)?;
