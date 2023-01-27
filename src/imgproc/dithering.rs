@@ -20,7 +20,7 @@ impl TargetColorSpace {
 
 pub const BW_TARGET_COLOR_SPACE: TargetColorSpace = TargetColorSpace {
     base: 0,
-    step: 255,
+    step: 0xf0,
     n_levels: 2,
 };
 
