@@ -12,8 +12,8 @@ struct Args {
     #[arg(short, long)]
     device: String,
 
-    #[arg(short, long, default_value_t = 2)]
-    mode: u32,
+    #[arg(short, long, default_value = "gc16")]
+    mode: driver::it8915::DisplayMode,
 
     #[arg(long, default_value_t = 500)]
     width: i32,
@@ -36,7 +36,7 @@ fn main() -> anyhow::Result<()> {
     let dev_path = PathBuf::from(&args.device);
     let mut dev = driver::it8915::IT8915::open(&dev_path)?;
     dev.pmic_control(Some(2150), Some(true))?;
-    dev.display_area(opencv::core::Rect2i::new(0, 0, 0, 0), 0, true)?;
+    dev.display_area(opencv::core::Rect2i::new(0, 0, 0, 0), driver::it8915::DisplayMode::INIT, true)?;
 
     let mut img : cv::core::Mat1b = cv::core::Mat::new_rows_cols_with_default(
         args.height, args.width, cv::core::CV_8UC1, cv::core::Scalar::all(0xf0 as f64))?.try_into_typed()?;

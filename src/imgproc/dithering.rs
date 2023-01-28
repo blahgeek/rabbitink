@@ -1,5 +1,5 @@
 use opencv as cv;
-use opencv::core::{Mat, Mat3b, Mat1b};
+use opencv::core::{Mat, Mat1b};
 use opencv::prelude::*;
 
 pub struct TargetColorSpace {

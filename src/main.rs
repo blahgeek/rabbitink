@@ -1,23 +1,26 @@
 use std::path::PathBuf;
 
-use opencv::prelude::*;
-use log::trace;
 use rabbitink::driver;
+use rabbitink::imgproc::dithering;
 
 
 fn main() -> anyhow::Result<()> {
-    env_logger::init();
-    trace!("Hello, world!");
+    env_logger::Builder::from_default_env()
+        .format_timestamp_micros()
+        .init();
+
+    let img_orig = opencv::imgcodecs::imread(&std::env::args().nth(2).unwrap(),
+                                             opencv::imgcodecs::IMREAD_GRAYSCALE)?;
+    let img = dithering::floyd_steinberg(img_orig.try_into_typed().unwrap(),
+                                         dithering::BW_TARGET_COLOR_SPACE);
 
     let dev_path = PathBuf::from(std::env::args().nth(1).unwrap());
     let mut dev = driver::it8915::IT8915::open(&dev_path)?;
+    dev.pmic_control(Some(2150), Some(true))?;
+    dev.display_area(opencv::core::Rect2i::new(0, 0, 0, 0), driver::it8915::DisplayMode::INIT, true)?;
 
-    // let img = opencv::imgcodecs::imread(&std::env::args().nth(2).unwrap(), opencv::imgcodecs::IMREAD_GRAYSCALE)?;
-    // dev.load_image_area((0, 0), opencv::core::Mat::roi(&img, opencv::core::Rect2i::new(0, 0, 500, 500))?.try_into_typed()?)?;
-    // dev.load_image_area((0, 0), opencv::core::Mat::zeros(500, 500, opencv::core::CV_8U)?.a().try_into_typed()?)?;
-    // dev.display_area(opencv::core::Rect2i::new(0, 0, 500, 500), 2)?;
-
-    dev.display_area(opencv::core::Rect2i::new(0, 0, 0, 0), 0)?;
+    dev.load_image_area((0, 0), &img)?;
+    dev.display_area(opencv::core::Rect2i::new(0, 0, 1448, 1072), driver::it8915::DisplayMode::A2, true)?;
 
     Ok(())
 }

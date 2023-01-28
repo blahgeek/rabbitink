@@ -52,6 +52,18 @@ impl Debug for BigEndianU16 {
     }
 }
 
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum DisplayMode {
+    INIT = 0,
+    DU,
+    GC16,
+    GL16,
+    GLR16,
+    GLD16,
+    A2,
+    DU4,
+}
+
 #[repr(packed)]
 #[derive(Clone, Copy, Debug, Default)]
 #[allow(dead_code)]
@@ -255,15 +267,14 @@ impl IT8915 {
         Ok(())
     }
 
-    // TODO: mode
-    pub fn display_area(&mut self, region: opencv::core::Rect2i, mode: u32, wait_ready: bool) -> anyhow::Result<()> {
+    pub fn display_area(&mut self, region: opencv::core::Rect2i, mode: DisplayMode, wait_ready: bool) -> anyhow::Result<()> {
         trace!("Displaying region {:?}, mode = {:?}", region, mode);
         let cmd: [u8; 16] = [
             0xfe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x94, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
         let args = DisplayAreaArgs {
             addr: self.sysinfo.image_buf_base,
-            mode: BigEndianU32::from(mode),
+            mode: BigEndianU32::from(mode as u32),
             x: BigEndianU32::from(region.x as u32),
             y: BigEndianU32::from(region.y as u32),
             w: BigEndianU32::from(region.width as u32),
