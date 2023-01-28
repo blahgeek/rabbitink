@@ -234,7 +234,7 @@ impl IT8915 {
         Ok(())
     }
 
-    pub fn load_image_area(&mut self, pos: (u32, u32), image: opencv::core::Mat1b) -> anyhow::Result<()> {
+    pub fn load_image_area(&mut self, pos: (u32, u32), image: &opencv::core::Mat1b) -> anyhow::Result<()> {
         let (canvas_w, canvas_h) = (self.sysinfo.width.val(), self.sysinfo.height.val());
         trace!("Loading image to pos {:?}, image size=({}, {})",
                pos, image.cols(), image.rows());
