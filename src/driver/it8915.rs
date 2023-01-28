@@ -189,10 +189,9 @@ impl IT8915 {
         Ok(())
     }
 
-    // TODO: does not seem to work correctly yet
     pub fn read_busy_state(&mut self) -> anyhow::Result<bool> {
         let mut res = BigEndianU16::from(0);
-        self.read_mem(0x1224, &mut res)?;   // LUTAFSR
+        self.read_mem(0x18001224, &mut res)?;   // LUTAFSR + 0x18000000
         trace!("Read busy state: {:?}", res);
         Ok(res.val() != 0)
     }
