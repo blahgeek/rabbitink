@@ -98,6 +98,10 @@ const EXPECT_INQUERY_VENDOR_PRODUCT : &'static str = "Generic Storage RamDisc 1.
 
 
 impl IT8915 {
+    pub fn screen_size(&self) -> (i32, i32) {
+        (self.sysinfo.width.val() as i32, self.sysinfo.height.val() as i32)
+    }
+
     pub fn open(path: &Path) -> anyhow::Result<IT8915> {
         let mut device = scsi::Device::open(path)?;
 
