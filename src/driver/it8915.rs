@@ -22,6 +22,12 @@ pub enum DisplayMode {
     DU4,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemoryMode {
+    Default8bpp,
+    Pack1bpp,
+}
+
 #[repr(packed)]
 #[derive(Clone, Copy, Debug, Default)]
 #[allow(dead_code)]
@@ -93,6 +99,9 @@ struct DisplayAreaArgs {
 pub struct IT8915 {
     device: scsi::Device,
     sysinfo: Sysinfo,
+
+    mem_mode: MemoryMode,
+    mem_pitch: u32,
 }
 
 const EXPECT_INQUERY_VENDOR_PRODUCT : &'static str = "Generic Storage RamDisc 1.00";
@@ -128,7 +137,46 @@ impl IT8915 {
         device.io_read(&sysinfo_cmd, &mut sysinfo).context("failed to read sysinfo")?;
         trace!("Sysinfo: {:?}", sysinfo);
 
-        Ok(IT8915 { device, sysinfo })
+        let mut res = IT8915 {
+            device,
+            sysinfo,
+            mem_mode: MemoryMode::Default8bpp,
+            mem_pitch: sysinfo.width.val(),
+        };
+        res.set_memory_mode(MemoryMode::Default8bpp)?;
+        Ok(res)
+    }
+
+    pub fn set_memory_mode(&mut self, mode: MemoryMode) -> anyhow::Result<()> {
+        self.mem_mode = mode;
+
+        // Enable/Disable 1bit drawing and image pitch mode
+        // 0000 0000 0000 0110 0000 0000 0000 0000
+        // |         |     ^^  |         |
+        // 113B      113A      1139      1138
+        let mut up1sr = self.read_mem::<4>(0x1800_1138)?;
+        match mode {
+            MemoryMode::Pack1bpp => up1sr[2] |= 0x06,
+            MemoryMode::Default8bpp => up1sr[2] &= !0x06,
+        }
+        self.write_mem(0x1800_1138, &up1sr)?;
+
+        // Set bitmap mode color definition (0 - set black(0x00), 1 - set white(0xf0))
+        self.write_mem(0x1800_1250, match mode {
+            MemoryMode::Pack1bpp => &[0xf0, 0x00],
+            _ => &[0x00, 0x00],
+        })?;
+
+        self.mem_pitch = match mode {
+            // 4 byte align
+            MemoryMode::Pack1bpp => (self.screen_size().0 as u32 + 31) / 8,
+            _ => self.screen_size().0 as u32,
+        };
+        // (not sure about why the "/4"... apparently the reg is in double-word)
+        self.write_mem(0x1800_124c, &[((self.mem_pitch / 4) & 0xff) as u8,
+                                      (((self.mem_pitch / 4) >> 8) & 0xff) as u8])?;
+
+        Ok(())
     }
 
     pub fn reset_display(&mut self) -> anyhow::Result<()> {
@@ -142,7 +190,7 @@ impl IT8915 {
         // although INIT would flush the display regardless of the memory content,
         // if we don't initialize the memory content, the following display cannot work correctly,
         // apparently they would depend on the last state.
-        self.load_image_area((0, 0), &white_img)?;
+        self.load_image_fast((0, 0), &white_img)?;
         self.display_area(cv::core::Rect2i::new(0, 0, w, h), DisplayMode::INIT, true)
     }
 
@@ -186,26 +234,24 @@ impl IT8915 {
         Ok(busy)
     }
 
-    // TODO: should not be public
-    // TODO: remove?
-    pub fn write_mem<DATA>(&mut self, addr: u32, buf: &DATA) -> anyhow::Result<()> {
+    fn write_mem(&mut self, addr: u32, data: &[u8]) -> anyhow::Result<()> {
         let cmd = MemIOCmd {
             hdr: 0xfe,
             addr: BigEndianU32::from(addr),
             cmd: 0x82,
-            len: BigEndianU16::from(u16::try_from(std::mem::size_of::<DATA>()).expect("write_mem buf too long")),
+            len: BigEndianU16::from(u16::try_from(data.len()).expect("write_mem buf too long")),
             ..MemIOCmd::default()
         };
-        self.device.io_write(&cmd, buf)?;
+        self.device.io_write_gather(&cmd, &[(data.as_ptr(), data.len())])?;
         Ok(())
     }
 
-    fn write_mem_batch(&mut self, addr: u32, data: &[u8]) -> anyhow::Result<()> {
+    fn write_mem_fast(&mut self, addr: u32, data: &[u8]) -> anyhow::Result<()> {
         let cmd = MemIOCmd {
             hdr: 0xfe,
             addr: BigEndianU32::from(addr),
             cmd: 0xa5,
-            len: BigEndianU16::from(u16::try_from(data.len()).expect("write_mem_batch data too long")),
+            len: BigEndianU16::from(u16::try_from(data.len()).expect("write_mem_fast data too long")),
             ..MemIOCmd::default()
         };
         self.device.io_write_gather(&cmd, &[(data.as_ptr(), data.len())])?;
@@ -238,6 +284,8 @@ impl IT8915 {
     }
 
     pub fn load_image_area(&mut self, pos: (u32, u32), image: &cv::core::Mat1b) -> anyhow::Result<()> {
+        assert_eq!(self.mem_mode, MemoryMode::Default8bpp);
+
         let (canvas_w, canvas_h) = (self.sysinfo.width.val(), self.sysinfo.height.val());
         trace!("Loading image to pos {:?}, image size=({}, {})",
                pos, image.cols(), image.rows());
@@ -252,6 +300,46 @@ impl IT8915 {
         while row < image.rows() {
             let subimg = image.row_bounds(row, i32::min(row + rows_per_step, image.rows())).unwrap();
             self.load_image_area_onestep((pos.0, pos.1 + row as u32), subimg.try_into_typed().unwrap())?;
+            row += rows_per_step;
+        }
+
+        Ok(())
+    }
+
+    fn load_image_fast_onestep(&mut self, row_offset: u32, image: &cv::core::Mat1b) -> anyhow::Result<()> {
+        let bpp = match self.mem_mode { // bit-per-pixel
+            MemoryMode::Pack1bpp => 1,
+            MemoryMode::Default8bpp => 8,
+        };
+        let ppbyte = 8/bpp;  // pixel-per-byte
+
+        let mut packed: Vec<u8> = vec![0; (self.mem_pitch as i32 * image.rows()) as usize];
+        assert!(packed.len() <= u16::MAX as usize);
+
+        for y in 0..image.rows() {
+            // let mut row_packed: Vec<u8> = vec![0; (image.cols()/ppbyte) as usize];
+            for x in 0..image.cols() {
+                packed[(y * self.mem_pitch as i32 + x/ppbyte) as usize] |=
+                    (image.at_2d::<u8>(y, x).unwrap() >> (8-bpp)) << (x % ppbyte);
+            }
+        }
+
+        let addr =
+            self.sysinfo.image_buf_base.val() +
+            self.mem_pitch * row_offset;
+        self.write_mem_fast(addr, &packed)?;
+
+        Ok(())
+    }
+
+    pub fn load_image_fast(&mut self, pos: (u32, u32), image: &cv::core::Mat1b) -> anyhow::Result<()> {
+        assert_eq!(pos.0, 0);
+
+        let rows_per_step = ((u16::MAX as u32) / self.mem_pitch) as i32;
+        let mut row = 0;
+        while row < image.rows() {
+            let subimg = image.row_bounds(row, i32::min(row + rows_per_step, image.rows())).unwrap();
+            self.load_image_fast_onestep(pos.1 + row as u32, &subimg.try_into_typed().unwrap())?;
             row += rows_per_step;
         }
 

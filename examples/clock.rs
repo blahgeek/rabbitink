@@ -36,6 +36,7 @@ fn main() -> anyhow::Result<()> {
     let dev_path = PathBuf::from(&args.device);
     let mut dev = driver::it8915::IT8915::open(&dev_path)?;
     dev.pmic_control(Some(2150), Some(true))?;
+    dev.set_memory_mode(driver::it8915::MemoryMode::Default8bpp)?;
     dev.reset_display()?;
 
     let mut img : cv::core::Mat1b = cv::core::Mat::new_rows_cols_with_default(
@@ -52,7 +53,7 @@ fn main() -> anyhow::Result<()> {
         let x_repeat = dev.screen_size().0 / args.width;
         info!("clock: {} start", n);
         for i in 0..x_repeat {
-            dev.load_image_area(((args.width * i) as u32, y as u32), &img)?;
+            dev.load_image_fast(((args.width * i) as u32, y as u32), &img)?;
         }
         // dev.load_image_area((args.width as u32, y as u32), &img)?;
         for i in 0..x_repeat {
