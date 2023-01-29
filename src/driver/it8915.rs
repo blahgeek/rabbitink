@@ -4,53 +4,10 @@ use log::{trace, info};
 use opencv::prelude::*;
 use anyhow::Context;
 
+use super::serde::{BigEndianU16, BigEndianU32};
 use super::scsi;
 
 const LOAD_IMAGE_MAX_TRANSFER_SIZE: i32 = 60800;
-
-#[repr(packed)]
-#[derive(Clone, Copy, Default)]
-struct BigEndianU32 ([u8; 4]);
-
-impl BigEndianU32 {
-    fn val(&self) -> u32 {
-        ((self.0[0] as u32) << 24) | ((self.0[1] as u32) << 16) | ((self.0[2] as u32) << 8) | (self.0[3] as u32)
-    }
-}
-
-impl From<u32> for BigEndianU32 {
-    fn from(value: u32) -> Self {
-        Self([(value >> 24) as u8, ((value >> 16) & 0xff) as u8, ((value >> 8) & 0xff) as u8, (value & 0xff) as u8])
-    }
-}
-
-impl Debug for BigEndianU32 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} [0x{:08x}, BE]", self.val(), self.val())
-    }
-}
-
-#[repr(packed)]
-#[derive(Clone, Copy, Default)]
-struct BigEndianU16 ([u8; 2]);
-
-impl BigEndianU16 {
-    fn val(&self) -> u16 {
-        ((self.0[0] as u16) << 8) | (self.0[1] as u16)
-    }
-}
-
-impl From<u16> for BigEndianU16 {
-    fn from(value: u16) -> Self {
-        Self([((value >> 8) & 0xff) as u8, (value & 0xff) as u8])
-    }
-}
-
-impl Debug for BigEndianU16 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} [0x{:04x}, BE]", self.val(), self.val())
-    }
-}
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum DisplayMode {
@@ -189,7 +146,9 @@ impl IT8915 {
         Ok(())
     }
 
-    fn read_mem<DATA>(&mut self, addr: u32, buf: &mut DATA) -> anyhow::Result<()> {
+    fn read_mem<DATA>(&mut self, addr: u32) -> anyhow::Result<DATA>
+    where DATA: Default {
+        let mut res = DATA::default();
         let cmd = MemIOCmd {
             hdr: 0xfe,
             addr: BigEndianU32::from(addr),
@@ -197,13 +156,12 @@ impl IT8915 {
             len: BigEndianU16::from(u16::try_from(std::mem::size_of::<DATA>()).expect("read_mem buf too long")),
             ..MemIOCmd::default()
         };
-        self.device.io_read(&cmd, buf)?;
-        Ok(())
+        self.device.io_read(&cmd, &mut res)?;
+        Ok(res)
     }
 
     pub fn read_busy_state(&mut self) -> anyhow::Result<bool> {
-        let mut res = BigEndianU16::from(0);
-        self.read_mem(0x18001224, &mut res)?;   // LUTAFSR + 0x18000000
+        let res = self.read_mem::<BigEndianU16>(0x18001224)?;   // LUTAFSR + 0x18000000
         trace!("Read busy state: {:?}", res);
         Ok(res.val() != 0)
     }
