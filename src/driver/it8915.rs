@@ -2,6 +2,7 @@ use std::{path::Path, fmt::Debug};
 
 use log::{trace, info};
 use opencv::prelude::*;
+use opencv as cv;
 use anyhow::Context;
 
 use super::serde::{BigEndianU16, BigEndianU32};
@@ -130,6 +131,21 @@ impl IT8915 {
         Ok(IT8915 { device, sysinfo })
     }
 
+    pub fn reset_display(&mut self) -> anyhow::Result<()> {
+        let (w, h) = self.screen_size();
+        let white_img: cv::core::Mat1b =
+            cv::core::Mat::new_rows_cols_with_default(
+                h, w,
+                opencv::core::CV_8U,
+                opencv::core::Scalar::all(0xf0 as f64))?
+            .try_into_typed()?;
+        // although INIT would flush the display regardless of the memory content,
+        // if we don't initialize the memory content, the following display cannot work correctly,
+        // apparently they would depend on the last state.
+        self.load_image_area((0, 0), &white_img)?;
+        self.display_area(cv::core::Rect2i::new(0, 0, w, h), DisplayMode::INIT, true)
+    }
+
     pub fn pmic_control(&mut self, vcom: Option<u16>, power: Option<bool>) -> anyhow::Result<()> {
         let mut cmd = PMICControlCmd {
             hdr: 0xfe,
@@ -150,14 +166,13 @@ impl IT8915 {
         Ok(())
     }
 
-    fn read_mem<DATA>(&mut self, addr: u32) -> anyhow::Result<DATA>
-    where DATA: Default {
-        let mut res = DATA::default();
+    pub fn read_mem<const LEN: usize>(&mut self, addr: u32) -> anyhow::Result<[u8; LEN]> {
+        let mut res : [u8; LEN] = [0_u8; LEN];
         let cmd = MemIOCmd {
             hdr: 0xfe,
             addr: BigEndianU32::from(addr),
             cmd: 0x81,
-            len: BigEndianU16::from(u16::try_from(std::mem::size_of::<DATA>()).expect("read_mem buf too long")),
+            len: BigEndianU16::from(u16::try_from(LEN).expect("read_mem buf too long")),
             ..MemIOCmd::default()
         };
         self.device.io_read(&cmd, &mut res)?;
@@ -165,12 +180,14 @@ impl IT8915 {
     }
 
     pub fn read_busy_state(&mut self) -> anyhow::Result<bool> {
-        let res = self.read_mem::<BigEndianU16>(0x18001224)?;   // LUTAFSR + 0x18000000
+        let res = self.read_mem::<2>(0x18001224)?;   // LUTAFSR + 0x18000000
         trace!("Read busy state: {:?}", res);
-        Ok(res.val() != 0)
+        let busy = res.iter().any(|x| *x != 0);
+        Ok(busy)
     }
 
     // TODO: should not be public
+    // TODO: remove?
     pub fn write_mem<DATA>(&mut self, addr: u32, buf: &DATA) -> anyhow::Result<()> {
         let cmd = MemIOCmd {
             hdr: 0xfe,
@@ -183,8 +200,20 @@ impl IT8915 {
         Ok(())
     }
 
+    fn write_mem_batch(&mut self, addr: u32, data: &[u8]) -> anyhow::Result<()> {
+        let cmd = MemIOCmd {
+            hdr: 0xfe,
+            addr: BigEndianU32::from(addr),
+            cmd: 0xa5,
+            len: BigEndianU16::from(u16::try_from(data.len()).expect("write_mem_batch data too long")),
+            ..MemIOCmd::default()
+        };
+        self.device.io_write_gather(&cmd, &[(data.as_ptr(), data.len())])?;
+        Ok(())
+    }
+
     // make sure that image size is within max transfer size
-    fn load_image_area_onestep(&mut self, pos: (u32, u32), image: opencv::core::Mat1b) -> anyhow::Result<()> {
+    fn load_image_area_onestep(&mut self, pos: (u32, u32), image: cv::core::Mat1b) -> anyhow::Result<()> {
         trace!("Loading image slice to pos {:?}, image size=({}, {})",
                pos, image.cols(), image.rows());
         let cmd: [u8; 16] = [
@@ -208,7 +237,7 @@ impl IT8915 {
         Ok(())
     }
 
-    pub fn load_image_area(&mut self, pos: (u32, u32), image: &opencv::core::Mat1b) -> anyhow::Result<()> {
+    pub fn load_image_area(&mut self, pos: (u32, u32), image: &cv::core::Mat1b) -> anyhow::Result<()> {
         let (canvas_w, canvas_h) = (self.sysinfo.width.val(), self.sysinfo.height.val());
         trace!("Loading image to pos {:?}, image size=({}, {})",
                pos, image.cols(), image.rows());
@@ -229,7 +258,7 @@ impl IT8915 {
         Ok(())
     }
 
-    pub fn display_area(&mut self, region: opencv::core::Rect2i, mode: DisplayMode, wait_ready: bool) -> anyhow::Result<()> {
+    pub fn display_area(&mut self, region: cv::core::Rect2i, mode: DisplayMode, wait_ready: bool) -> anyhow::Result<()> {
         trace!("Displaying region {:?}, mode = {:?}", region, mode);
         let cmd: [u8; 16] = [
             0xfe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x94, 0x00,

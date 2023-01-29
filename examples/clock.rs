@@ -35,8 +35,8 @@ fn main() -> anyhow::Result<()> {
 
     let dev_path = PathBuf::from(&args.device);
     let mut dev = driver::it8915::IT8915::open(&dev_path)?;
-    dev.pmic_control(Some(2150), Some(false))?;
-    dev.display_area(opencv::core::Rect2i::new(0, 0, 0, 0), driver::it8915::DisplayMode::INIT, true)?;
+    dev.pmic_control(Some(2150), Some(true))?;
+    dev.reset_display()?;
 
     let mut img : cv::core::Mat1b = cv::core::Mat::new_rows_cols_with_default(
         args.height, args.width, cv::core::CV_8UC1, cv::core::Scalar::all(0xf0 as f64))?.try_into_typed()?;
