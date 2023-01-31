@@ -49,11 +49,11 @@ fn main() -> anyhow::Result<()> {
                               cv::imgproc::FONT_HERSHEY_SIMPLEX, args.scale,
                               cv::core::Scalar::all(0.0), 2, cv::imgproc::LINE_8, false)?;
 
-        let y = (n % (dev.screen_size().1 / args.height)) * args.height;
-        let x_repeat = dev.screen_size().0 / args.width;
+        let y = (n % (dev.get_screen_size().height / args.height)) * args.height;
+        let x_repeat = dev.get_screen_size().width / args.width;
         info!("clock: {} start", n);
         for i in 0..x_repeat {
-            dev.load_image_area(((args.width * i) as u32, y as u32), &img)?;
+            dev.load_image_area((args.width * i, y).into(), &img)?;
         }
         // dev.load_image_area((args.width as u32, y as u32), &img)?;
         for i in 0..x_repeat {

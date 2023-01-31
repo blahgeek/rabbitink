@@ -109,8 +109,8 @@ const EXPECT_INQUERY_VENDOR_PRODUCT : &'static str = "Generic Storage RamDisc 1.
 
 
 impl IT8915 {
-    pub fn screen_size(&self) -> (i32, i32) {
-        (self.sysinfo.width.val() as i32, self.sysinfo.height.val() as i32)
+    pub fn get_screen_size(&self) -> cv::core::Size2i {
+        cv::core::Size2i::new(self.sysinfo.width.val() as i32, self.sysinfo.height.val() as i32)
     }
 
     pub fn open(path: &Path) -> anyhow::Result<IT8915> {
@@ -170,8 +170,8 @@ impl IT8915 {
 
         self.mem_pitch = match mode {
             // 4 byte align
-            MemoryMode::Pack1bpp => (self.screen_size().0 as u32 + 31) / 8,
-            _ => self.screen_size().0 as u32,
+            MemoryMode::Pack1bpp => (self.get_screen_size().width as u32 + 31) / 8,
+            _ => self.get_screen_size().width as u32,
         };
         // (not sure about why the "/4"... apparently the reg is in double-word)
         self.write_mem(0x1800_124c, &[((self.mem_pitch / 4) & 0xff) as u8,
@@ -181,10 +181,9 @@ impl IT8915 {
     }
 
     pub fn reset_display(&mut self) -> anyhow::Result<()> {
-        let (w, h) = self.screen_size();
         let white_img: cv::core::Mat1b =
-            cv::core::Mat::new_rows_cols_with_default(
-                h, w,
+            cv::core::Mat::new_size_with_default(
+                self.get_screen_size(),
                 opencv::core::CV_8U,
                 opencv::core::Scalar::all(0xf0 as f64))?
             .try_into_typed()?;
@@ -192,7 +191,8 @@ impl IT8915 {
         // if we don't initialize the memory content, the following display cannot work correctly,
         // apparently they would depend on the last state.
         self.load_image_fullwidth(0, &white_img)?;
-        self.display_area(cv::core::Rect2i::new(0, 0, w, h), DisplayMode::INIT, true)
+        self.display_area(cv::core::Rect2i::from_point_size(cv::core::Point2i::new(0, 0), self.get_screen_size()),
+                          DisplayMode::INIT, true)
     }
 
     pub fn pmic_control(&mut self, vcom: Option<u16>, power: Option<bool>) -> anyhow::Result<()> {
@@ -260,16 +260,16 @@ impl IT8915 {
     }
 
     // make sure that image size is within max transfer size
-    fn load_image_area_onestep(&mut self, pos: (u32, u32), image: cv::core::Mat1b) -> anyhow::Result<()> {
-        trace!("Loading image slice to pos {:?}, image size=({}, {})",
+    fn load_image_area_onestep(&mut self, pos: cv::core::Point2i, image: cv::core::Mat1b) -> anyhow::Result<()> {
+        trace!("Loading image area to pos {:?}, image size=({}, {})",
                pos, image.cols(), image.rows());
         let cmd: [u8; 16] = [
             0xfe, 0x00, 0x00, 0x00, 0x00, 0x00, 0xa2, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
         let args = LoadImageAreaArgs {
             addr: self.sysinfo.image_buf_base,
-            x: BigEndianU32::from(pos.0),
-            y: BigEndianU32::from(pos.1),
+            x: BigEndianU32::from(pos.x as u32),
+            y: BigEndianU32::from(pos.y as u32),
             w: BigEndianU32::from(image.cols() as u32),
             h: BigEndianU32::from(image.rows() as u32),
         };
@@ -284,29 +284,30 @@ impl IT8915 {
         Ok(())
     }
 
-    pub fn load_image_area(&mut self, pos: (u32, u32), image: &cv::core::Mat1b) -> anyhow::Result<()> {
+    pub fn load_image_area(&mut self, pos: cv::core::Point2i, image: &cv::core::Mat1b) -> anyhow::Result<()> {
+        let (canvas_w, canvas_h) = (self.sysinfo.width.val(), self.sysinfo.height.val());
+        trace!("Loading image to pos {:?}, image size=({}, {})",
+               pos, image.cols(), image.rows());
+        if (pos.x + image.cols()) as u32 > canvas_w || (pos.y + image.rows()) as u32 > canvas_h {
+            anyhow::bail!("load image too large: pos={:?}, image size=({}, {})",
+                          pos, image.cols(), image.rows());
+        }
+
         // fast path, if the image is full width
-        if pos.0 == 0 && image.cols() == self.screen_size().0 {
-            return self.load_image_fullwidth(pos.1, image);
+        if pos.x == 0 && image.cols() == self.get_screen_size().width {
+            return self.load_image_fullwidth(pos.y as u32, image);
         }
 
         // slow path, only support 8bpp mode
         assert_eq!(self.mem_mode, MemoryMode::Default8bpp);
-
-        let (canvas_w, canvas_h) = (self.sysinfo.width.val(), self.sysinfo.height.val());
-        trace!("Loading image to pos {:?}, image size=({}, {})",
-               pos, image.cols(), image.rows());
-        if pos.0 + (image.cols() as u32) > canvas_w || pos.1 + (image.rows() as u32) > canvas_h {
-            anyhow::bail!("load image too large: pos={:?}, image size=({}, {})",
-                          pos, image.cols(), image.rows());
-        }
         let rows_per_step = LOAD_IMAGE_MAX_TRANSFER_SIZE / image.cols();
         assert!(rows_per_step > 0);
 
         let mut row = 0_i32;
         while row < image.rows() {
             let subimg = image.row_bounds(row, i32::min(row + rows_per_step, image.rows())).unwrap();
-            self.load_image_area_onestep((pos.0, pos.1 + row as u32), subimg.try_into_typed().unwrap())?;
+            self.load_image_area_onestep(cv::core::Point2i::new(pos.x, pos.y + row),
+                                         subimg.try_into_typed().unwrap())?;
             row += rows_per_step;
         }
 
@@ -315,7 +316,9 @@ impl IT8915 {
 
     // faster than load_image_area, but the image must cover full width
     fn load_image_fullwidth(&mut self, row_offset: u32, image: &cv::core::Mat1b) -> anyhow::Result<()> {
-        assert_eq!(image.cols(), self.screen_size().0);
+        trace!("Loading image fullwidth to row {}, image size=({}, {})",
+               row_offset, image.cols(), image.rows());
+        assert_eq!(image.cols(), self.get_screen_size().width);
 
         let rows_per_step = ((u16::MAX as u32) / self.mem_pitch) as i32;
         let mut row = 0;
