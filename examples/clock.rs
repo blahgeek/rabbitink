@@ -53,7 +53,7 @@ fn main() -> anyhow::Result<()> {
         let x_repeat = dev.screen_size().0 / args.width;
         info!("clock: {} start", n);
         for i in 0..x_repeat {
-            dev.load_image_fast(((args.width * i) as u32, y as u32), &img)?;
+            dev.load_image_area(((args.width * i) as u32, y as u32), &img)?;
         }
         // dev.load_image_area((args.width as u32, y as u32), &img)?;
         for i in 0..x_repeat {

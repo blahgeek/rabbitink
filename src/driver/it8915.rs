@@ -191,7 +191,7 @@ impl IT8915 {
         // although INIT would flush the display regardless of the memory content,
         // if we don't initialize the memory content, the following display cannot work correctly,
         // apparently they would depend on the last state.
-        self.load_image_fast((0, 0), &white_img)?;
+        self.load_image_fullwidth(0, &white_img)?;
         self.display_area(cv::core::Rect2i::new(0, 0, w, h), DisplayMode::INIT, true)
     }
 
@@ -285,6 +285,12 @@ impl IT8915 {
     }
 
     pub fn load_image_area(&mut self, pos: (u32, u32), image: &cv::core::Mat1b) -> anyhow::Result<()> {
+        // fast path, if the image is full width
+        if pos.0 == 0 && image.cols() == self.screen_size().0 {
+            return self.load_image_fullwidth(pos.1, image);
+        }
+
+        // slow path, only support 8bpp mode
         assert_eq!(self.mem_mode, MemoryMode::Default8bpp);
 
         let (canvas_w, canvas_h) = (self.sysinfo.width.val(), self.sysinfo.height.val());
@@ -307,8 +313,9 @@ impl IT8915 {
         Ok(())
     }
 
-    pub fn load_image_fast(&mut self, pos: (u32, u32), image: &cv::core::Mat1b) -> anyhow::Result<()> {
-        assert_eq!(pos.0, 0);
+    // faster than load_image_area, but the image must cover full width
+    fn load_image_fullwidth(&mut self, row_offset: u32, image: &cv::core::Mat1b) -> anyhow::Result<()> {
+        assert_eq!(image.cols(), self.screen_size().0);
 
         let rows_per_step = ((u16::MAX as u32) / self.mem_pitch) as i32;
         let mut row = 0;
@@ -319,7 +326,8 @@ impl IT8915 {
                 MemoryMode::Pack1bpp => bitpack::pack_image::<1>(&subimg, self.mem_pitch as i32),
                 MemoryMode::Default8bpp => bitpack::pack_image::<8>(&subimg, self.mem_pitch as i32),
             };
-            self.write_mem_fast(self.sysinfo.image_buf_base.val() + self.mem_pitch * row as u32, &packed)?;
+            self.write_mem_fast(self.sysinfo.image_buf_base.val() + self.mem_pitch * (row as u32 + row_offset),
+                                &packed)?;
 
             row += rows_per_step;
         }
