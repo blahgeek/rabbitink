@@ -31,7 +31,7 @@ pub const GREY16_TARGET_COLOR_SPACE: TargetColorSpace = TargetColorSpace {
 };
 
 
-pub fn floyd_steinberg(grey_src: Mat1b, target_color_space: TargetColorSpace) -> Mat1b {
+pub fn floyd_steinberg(grey_src: &Mat1b, target_color_space: TargetColorSpace) -> Mat1b {
     // new_size without default is unsafe. but we will fill it soon
     let mut dst: Mat = unsafe { Mat::new_size(grey_src.size().unwrap(), cv::core::CV_8UC1).unwrap() };
 
