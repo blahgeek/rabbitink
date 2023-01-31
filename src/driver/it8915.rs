@@ -7,6 +7,7 @@ use anyhow::Context;
 
 use super::serde::{BigEndianU16, BigEndianU32};
 use super::scsi;
+use crate::imgproc::bitpack;
 
 const LOAD_IMAGE_MAX_TRANSFER_SIZE: i32 = 60800;
 
@@ -306,40 +307,20 @@ impl IT8915 {
         Ok(())
     }
 
-    fn load_image_fast_onestep(&mut self, row_offset: u32, image: &cv::core::Mat1b) -> anyhow::Result<()> {
-        let bpp = match self.mem_mode { // bit-per-pixel
-            MemoryMode::Pack1bpp => 1,
-            MemoryMode::Default8bpp => 8,
-        };
-        let ppbyte = 8/bpp;  // pixel-per-byte
-
-        let mut packed: Vec<u8> = vec![0; (self.mem_pitch as i32 * image.rows()) as usize];
-        assert!(packed.len() <= u16::MAX as usize);
-
-        for y in 0..image.rows() {
-            // let mut row_packed: Vec<u8> = vec![0; (image.cols()/ppbyte) as usize];
-            for x in 0..image.cols() {
-                packed[(y * self.mem_pitch as i32 + x/ppbyte) as usize] |=
-                    (image.at_2d::<u8>(y, x).unwrap() >> (8-bpp)) << (x % ppbyte);
-            }
-        }
-
-        let addr =
-            self.sysinfo.image_buf_base.val() +
-            self.mem_pitch * row_offset;
-        self.write_mem_fast(addr, &packed)?;
-
-        Ok(())
-    }
-
     pub fn load_image_fast(&mut self, pos: (u32, u32), image: &cv::core::Mat1b) -> anyhow::Result<()> {
         assert_eq!(pos.0, 0);
 
         let rows_per_step = ((u16::MAX as u32) / self.mem_pitch) as i32;
         let mut row = 0;
         while row < image.rows() {
-            let subimg = image.row_bounds(row, i32::min(row + rows_per_step, image.rows())).unwrap();
-            self.load_image_fast_onestep(pos.1 + row as u32, &subimg.try_into_typed().unwrap())?;
+            let subimg : cv::core::Mat1b =
+                image.row_bounds(row, i32::min(row + rows_per_step, image.rows()))?.try_into_typed()?;
+            let packed = match self.mem_mode {
+                MemoryMode::Pack1bpp => bitpack::pack_image::<1>(&subimg, self.mem_pitch as i32),
+                MemoryMode::Default8bpp => bitpack::pack_image::<8>(&subimg, self.mem_pitch as i32),
+            };
+            self.write_mem_fast(self.sysinfo.image_buf_base.val() + self.mem_pitch * row as u32, &packed)?;
+
             row += rows_per_step;
         }
 

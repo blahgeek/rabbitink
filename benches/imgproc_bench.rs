@@ -9,6 +9,12 @@ fn bitpack_bench(c: &mut Criterion) {
         let img : cv::core::Mat1b =
             cv::core::Mat::new_rows_cols_with_default(1000, 1000, cv::core::CV_8UC1, cv::core::Scalar::all(42.0))
             .unwrap().try_into_typed().unwrap();
+        b.iter(|| black_box(imgproc::bitpack::pack_image::<1>(&img, 128)));
+    });
+    c.bench_function("Pack 8bpp, 1k*1k", |b| {
+        let img : cv::core::Mat1b =
+            cv::core::Mat::new_rows_cols_with_default(1000, 1000, cv::core::CV_8UC1, cv::core::Scalar::all(42.0))
+            .unwrap().try_into_typed().unwrap();
         b.iter(|| black_box(imgproc::bitpack::pack_image::<1>(&img, 1024)));
     });
 }
