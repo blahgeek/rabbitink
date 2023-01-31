@@ -16,5 +16,12 @@ log = "0.4.17"
 nix = { version = "0.26.2", features = ["ioctl", "fs"] }
 clap = { version = "4.1.4", features = ["derive"] }
 
+[dev-dependencies]
+criterion = "0.4.0"
+
+[[bench]]
+name = "imgproc_bench"
+harness = false
+
 # [[example]]
 # name = "dithering"
