@@ -3,4 +3,4 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 
-include!(concat!(env!("OUT_DIR"), "/scsi_bindings.rs"));
+include!(concat!(env!("OUT_DIR"), "/src/driver/scsi/bindings.rs"));

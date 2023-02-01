@@ -3,14 +3,24 @@ extern crate bindgen;
 use std::env;
 use std::path::PathBuf;
 
-fn main() {
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+fn add_binding(header_path: &str) {
+    println!("cargo:rerun-if-changed={}", header_path);
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let binding_path = out_dir.join(header_path.replace(".h", ".rs"));
+    std::fs::create_dir_all(binding_path.parent().unwrap())
+        .expect(&format!("Cannot create directory for {}", binding_path.to_string_lossy()));
+
     bindgen::Builder::default()
-        .header("src/driver/scsi/wrapper.h")
+        .header(header_path)
         .derive_default(true)
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         .generate()
-        .expect("Unable to generate scsi wrapper bindings")
-        .write_to_file(out_path.join("scsi_bindings.rs"))
-        .expect("Couldn't write bindings!");
+        .expect(&format!("Unable to generate binding {}", header_path))
+        .write_to_file(binding_path)
+        .expect("Cannot write binding");
+}
+
+fn main() {
+    add_binding("src/driver/scsi/bindings.h");
 }
