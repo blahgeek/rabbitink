@@ -39,18 +39,20 @@ pub fn floyd_steinberg(grey_src: &Mat1b, target_color_space: TargetColorSpace) -
     let mut next_row_additions: Vec<f32> = vec![0.0; (grey_src.cols() as usize) + 1];
 
     for row in 0..grey_src.rows() {
-        for col in 0..grey_src.cols() {
+        let src_row_ptr = grey_src.ptr(row).unwrap();
+        let dst_row_ptr = dst.ptr_mut(row).unwrap();
+        for col in 0..(grey_src.cols() as usize) {
             let (val, residual) = target_color_space.find_nearest_and_residual(
-                (*grey_src.at_2d::<u8>(row, col).unwrap() as f32) +
-                    current_row_additions[col as usize]);
-            *dst.at_2d_mut::<u8>(row, col).unwrap() = val;
+                (unsafe{*src_row_ptr.add(col)} as f32) +
+                    current_row_additions[col]);
+            unsafe{ *dst_row_ptr.add(col) = val; }
 
-            current_row_additions[(col+1) as usize] += residual * 7.0 / 16.0;
+            current_row_additions[col+1] += residual * 7.0 / 16.0;
             if col >= 1 {
-                next_row_additions[(col-1) as usize] += residual * 3.0 / 16.0;
+                next_row_additions[col-1] += residual * 3.0 / 16.0;
             }
-            next_row_additions[col as usize] += residual * 5.0 / 16.0;
-            next_row_additions[(col+1) as usize] += residual * 1.0 / 16.0;
+            next_row_additions[col] += residual * 5.0 / 16.0;
+            next_row_additions[col+1] += residual * 1.0 / 16.0;
         }
         std::mem::swap(&mut current_row_additions, &mut next_row_additions);
         next_row_additions.fill(0.0);
