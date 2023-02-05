@@ -23,6 +23,9 @@ struct Args {
 
     #[arg(short, long, default_value_t = 1.0)]
     scale: f64,
+
+    #[arg(long)]
+    no_repeat: bool,
 }
 
 
@@ -36,8 +39,11 @@ fn main() -> anyhow::Result<()> {
     let dev_path = PathBuf::from(&args.device);
     let mut dev = driver::it8915::IT8915::open(&dev_path)?;
     dev.pmic_control(Some(2150), Some(true))?;
-    dev.set_memory_mode(driver::it8915::MemoryMode::Default8bpp)?;
+    dev.set_memory_mode(driver::it8915::MemoryMode::Pack1bpp)?;
     dev.reset_display()?;
+
+    let x_repeat = if args.no_repeat {1} else {dev.get_screen_size().width / args.width};
+    let y_repeat = if args.no_repeat {1} else {dev.get_screen_size().height / args.height};
 
     let mut img : cv::core::Mat1b = cv::core::Mat::new_rows_cols_with_default(
         args.height, args.width, cv::core::CV_8UC1, cv::core::Scalar::all(0xf0 as f64))?.try_into_typed()?;
@@ -49,17 +55,24 @@ fn main() -> anyhow::Result<()> {
                               cv::imgproc::FONT_HERSHEY_SIMPLEX, args.scale,
                               cv::core::Scalar::all(0.0), 2, cv::imgproc::LINE_8, false)?;
 
-        let y = (n % (dev.get_screen_size().height / args.height)) * args.height;
-        let x_repeat = dev.get_screen_size().width / args.width;
-        info!("clock: {} start", n);
-        for i in 0..x_repeat {
-            dev.load_image_area((args.width * i, y).into(), &img)?;
+        // let y = (n % y_repeat) * args.height;
+        info!("clock: {}, start", n);
+        for x in 0..x_repeat {
+            for y in 0..y_repeat {
+                dev.load_image_area((args.width * x, args.height * y).into(), &img)?;
+            }
         }
-        // dev.load_image_area((args.width as u32, y as u32), &img)?;
-        for i in 0..x_repeat {
-            dev.display_area(opencv::core::Rect2i::new(args.width * i, y, args.width, args.height), args.mode, false)?;
+        info!("clock: {}, loaded image, {:?}", n, start.elapsed());
+
+        for x in 0..x_repeat {
+            for y in 0..y_repeat {
+                dev.display_area(opencv::core::Rect2i::new(args.width * x, args.height * y, args.width / 10, args.height),
+                                 args.mode,
+                                 false)?;
+            }
         }
-        // dev.display_area(opencv::core::Rect2i::new(args.width, y, args.width, args.height), args.mode, true)?;
+        info!("clock: {}, sended display request, {:?}", n, start.elapsed());
+
         while dev.read_busy_state()? {
             std::thread::sleep(std::time::Duration::from_millis(1));
         }

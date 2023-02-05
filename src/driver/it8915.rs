@@ -299,7 +299,8 @@ impl IT8915 {
         }
 
         // slow path, only support 8bpp mode
-        assert_eq!(self.mem_mode, MemoryMode::Default8bpp);
+        assert_eq!(self.mem_mode, MemoryMode::Default8bpp,
+                   "Loading image non-full-row-area only support default 8bpp mode");
         let rows_per_step = LOAD_IMAGE_MAX_TRANSFER_SIZE / image.cols();
         assert!(rows_per_step > 0);
 
