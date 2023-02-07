@@ -5,6 +5,7 @@ use std::{
 };
 
 mod x11grab;
+mod xcbgrab;
 
 // Source that produces fixed-size grey (CV_8U) images
 // The API is "pull" instead of "push", to allow smallest possible latency
@@ -89,3 +90,4 @@ impl<T: PublishingSource + Send + 'static> PublishingSourceAdapter<T> {
 }
 
 pub use x11grab::X11GrabSource;
+pub use xcbgrab::XcbGrabSource;

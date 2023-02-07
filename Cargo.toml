@@ -15,6 +15,8 @@ opencv = { version = "0.75", default-features = false, features = ["imgproc", "i
 log = "0.4.17"
 nix = { version = "0.26.2", features = ["ioctl", "fs"] }
 clap = { version = "4.1.4", features = ["derive"] }
+libc = "0.2.139"
+xcb = { version = "1.2.0", features = ["shm", "xfixes", "shape"] }
 
 [dev-dependencies]
 criterion = "0.4.0"

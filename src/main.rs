@@ -5,7 +5,7 @@ use cv::prelude::*;
 use log::info;
 use clap::Parser;
 
-use rabbitink::source::{PublishingSourceAdapter, X11GrabSource, Source};
+use rabbitink::source::{PublishingSourceAdapter, X11GrabSource, Source, XcbGrabSource};
 use rabbitink::driver;
 use rabbitink::imgproc;
 
@@ -29,13 +29,14 @@ fn main() -> anyhow::Result<()> {
     dev.reset_display()?;
     let screen_rect = cv::core::Rect2i::from_point_size((0, 0).into(), dev.get_screen_size());
 
-    let mut source = PublishingSourceAdapter::new(X11GrabSource {
-        width: 1448,
-        height: 1072,
-        framerate: 100,
-        input: ":0.0".into(),
-    })?;
-    source.start()?;
+    let source = XcbGrabSource::new(":0.0", Some((0,0,1448,1072).into()))?;
+    // let mut source = PublishingSourceAdapter::new(X11GrabSource {
+    //     width: 1448,
+    //     height: 1072,
+    //     framerate: 100,
+    //     input: ":0.0".into(),
+    // })?;
+    // source.start()?;
 
     loop {
         let mut frame = cv::core::Mat::default();
