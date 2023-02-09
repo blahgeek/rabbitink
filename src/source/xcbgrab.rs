@@ -1,5 +1,3 @@
-// mod bindings;
-
 use log::{info, trace};
 use anyhow::bail;
 use opencv as cv;
@@ -52,11 +50,9 @@ pub struct XcbGrabSource {
 
     rect: cv::core::Rect2i,
     cv_color_to_gray: i32,
-}
 
-// unsafe fn get_screen(setup: *const bindings::xcb_setup_t) -> *mut bindings::xcb_screen_t {
-//     bindings::xcb_setup_roots_iterator(setup).data
-// }
+    grey_frame: cv::core::Mat,
+}
 
 impl XcbGrabSource {
     pub fn new(display_name: &str, rect: Option<cv::core::Rect2i>) -> anyhow::Result<XcbGrabSource> {
@@ -90,12 +86,12 @@ impl XcbGrabSource {
             read_only: false,
         })?;
         info!("Created XcbGrabSource: {:?}, {:?}, {:?}", window, format, rect);
-        Ok(XcbGrabSource { conn, window, format, segment, shmem, rect, cv_color_to_gray })
+        Ok(XcbGrabSource { conn, window, format, segment, shmem, rect, cv_color_to_gray, grey_frame: cv::core::Mat::default() })
     }
 }
 
 impl Source for XcbGrabSource {
-    fn get_frame(&self, output: &mut cv::core::Mat) -> anyhow::Result<()> {
+    fn get_frame(&mut self, output_callback: &mut dyn FnMut(&cv::core::Mat) -> anyhow::Result<()>) -> anyhow::Result<()> {
         let image_cookie = self.conn.send_request(&xcb::shm::GetImage {
             drawable: xcb::x::Drawable::Window(self.window),
             x: self.rect.x as i16,
@@ -117,8 +113,7 @@ impl Source for XcbGrabSource {
             self.shmem.ptr(),
             cv::core::Mat_AUTO_STEP)
         }?;
-        cv::imgproc::cvt_color(&mat_ref, output, self.cv_color_to_gray, 0)?;
-
-        Ok(())
+        cv::imgproc::cvt_color(&mat_ref, &mut self.grey_frame, self.cv_color_to_gray, 0)?;
+        output_callback(&self.grey_frame)
     }
 }

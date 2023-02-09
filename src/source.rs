@@ -10,7 +10,7 @@ mod xcbgrab;
 // Source that produces fixed-size grey (CV_8U) images
 // The API is "pull" instead of "push", to allow smallest possible latency
 pub trait Source {
-    fn get_frame(&self, output: &mut cv::core::Mat) -> anyhow::Result<()>;
+    fn get_frame(&mut self, output_callback: &mut dyn FnMut(&cv::core::Mat) -> anyhow::Result<()>) -> anyhow::Result<()>;
 }
 
 pub trait PublishingSource {
@@ -30,14 +30,13 @@ pub struct PublishingSourceAdapter<T> {
 }
 
 impl<T> Source for PublishingSourceAdapter<T> {
-    fn get_frame(&self, output: &mut cv::core::Mat) -> anyhow::Result<()> {
+    fn get_frame(&mut self, output_callback: &mut dyn FnMut(&cv::core::Mat) -> anyhow::Result<()>) -> anyhow::Result<()> {
         let res = self.latest_result.lock().unwrap();
         let res: &anyhow::Result<cv::core::Mat> = res.deref();
         match &res {
-            &Ok(m) => *output = m.clone(),
+            &Ok(m) => output_callback(m),
             &Err(err) => anyhow::bail!("{}", err),
         }
-        Ok(())
     }
 }
 
