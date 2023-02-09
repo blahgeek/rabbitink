@@ -341,6 +341,12 @@ impl IT8915 {
 
     pub fn display_area(&mut self, region: cv::core::Rect2i, mode: DisplayMode, wait_ready: bool) -> anyhow::Result<()> {
         trace!("Displaying region {:?}, mode = {:?}", region, mode);
+        if self.mem_mode == MemoryMode::Pack1bpp {
+            assert!(region.x % 32 == 0, "Pack1bpp mode requires 4 byte align");
+            assert!(region.width % 32 == 0 || region.width == self.get_screen_size().width,
+                    "Pack1bpp mode requires 4 byte align");
+        }
+
         let cmd: [u8; 16] = [
             0xfe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x94, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
