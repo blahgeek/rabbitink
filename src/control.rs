@@ -1,3 +1,4 @@
+use anyhow::bail;
 use opencv as cv;
 use cv::prelude::*;
 use log::{warn, info};
@@ -31,7 +32,9 @@ fn compute_modified_row_range(m_a: &cv::core::Mat, m_b: &cv::core::Mat) -> Optio
 
 struct State<S> {
     loaded_frame: Option<cv::core::Mat1b>,  // black-white
-    display_dirty_rect: cv::core::Rect2i,
+    display_dirty_region: cv::core::Rect2i,
+
+    display_full_refreshed: bool,
 
     dev: it8915::IT8915,
     source: S,
@@ -45,7 +48,7 @@ struct LoadFrameResult {
 }
 
 impl<S: Source> State<S> {
-    fn load_frame(&mut self) -> anyhow::Result<Option<LoadFrameResult>> {
+    fn load_frame(&mut self) -> anyhow::Result<LoadFrameResult> {
         let screen_size = self.dev.get_screen_size();
 
         let t_load_start = std::time::Instant::now();
@@ -62,17 +65,13 @@ impl<S: Source> State<S> {
                 new_frame = Some(dithering::floyd_steinberg(&orig_frame.try_into_typed()?,
                                                             dithering::BW_TARGET_COLOR_SPACE));
                 t_imgproc = std::time::Instant::now();
+                Ok(())
             } else {
-                warn!("Source not ready yet");
+                bail!("Source did not return valid frame")
             }
-            Ok(())
         })?;
 
-        if new_frame.is_none() {
-            return Ok(None);
-        }
         let new_frame = new_frame.unwrap();
-
         let modified_range = match &self.loaded_frame {
             None => Some((0, new_frame.rows())),
             Some(loaded_frame) => compute_modified_row_range(new_frame.as_untyped(), loaded_frame.as_untyped()),
@@ -82,23 +81,29 @@ impl<S: Source> State<S> {
             let load_area = cv::core::Mat::roi(new_frame.as_untyped(), modified_rect)?;
             self.dev.load_image_area(modified_rect.tl(), &load_area.try_into_typed()?)?;
 
-            self.display_dirty_rect = cv::core::Rect2i::from_points(
-                (0, i32::min(self.display_dirty_rect.tl().y, modified_range.0)).into(),
-                (new_frame.cols(), i32::max(self.display_dirty_rect.br().y, modified_range.1)).into()
+            self.display_dirty_region = cv::core::Rect2i::from_points(
+                (0, i32::min(self.display_dirty_region.tl().y, modified_range.0)).into(),
+                (new_frame.cols(), i32::max(self.display_dirty_region.br().y, modified_range.1)).into()
             );
             self.loaded_frame = Some(new_frame);
-        } else if self.display_dirty_rect.empty() {
-            // TODO: this return semantic is a mess
-            return Ok(None);
         }
         let t_loaded = std::time::Instant::now();
 
-        Ok(Some(LoadFrameResult { t_load_start, t_got_frame, t_imgproc, t_loaded }))
+        Ok(LoadFrameResult { t_load_start, t_got_frame, t_imgproc, t_loaded })
     }
 
     fn display(&mut self) -> anyhow::Result<()> {
-        self.dev.display_area(self.display_dirty_rect, it8915::DisplayMode::A2, false)?;
-        self.display_dirty_rect = cv::core::Rect2i::new(0,0,0,0);
+        self.dev.display_area(self.display_dirty_region, it8915::DisplayMode::A2, false)?;
+        self.display_dirty_region = cv::core::Rect2i::new(0,0,0,0);
+        self.display_full_refreshed = false;
+        Ok(())
+    }
+
+    fn display_full_refresh(&mut self) -> anyhow::Result<()> {
+        self.dev.display_area(cv::core::Rect2i::from_point_size((0, 0).into(), self.dev.get_screen_size()),
+                              it8915::DisplayMode::GC16, true)?;
+        self.display_dirty_region = cv::core::Rect2i::new(0,0,0,0);
+        self.display_full_refreshed = true;
         Ok(())
     }
 }
@@ -112,24 +117,29 @@ where T: Source {
 
     let mut s = State {
         loaded_frame: None,
-        display_dirty_rect: cv::core::Rect2i::new(0,0,0,0),
+        display_dirty_region: cv::core::Rect2i::new(0,0,0,0),
+        display_full_refreshed: true,
         dev, source,
     };
 
     let mut t_last_frame = std::time::Instant::now();
     loop {
         let load_frame_result = s.load_frame()?;
-        if load_frame_result.is_none() {
-            // frame not changed
-            std::thread::sleep(std::time::Duration::from_millis(10));
-            continue;
-        }
         if s.dev.read_busy_state()? {
-            // last frame not ready
             continue;
         }
 
-        let load_frame_result = load_frame_result.unwrap();
+        if s.display_dirty_region.empty() {
+            // frame not changed
+            if t_last_frame.elapsed() > std::time::Duration::from_secs(5) && !s.display_full_refreshed {
+                info!("Full refresh!");
+                s.display_full_refresh()?;
+            } else {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            continue;
+        }
+
         s.display()?;
         let t_display_finish = std::time::Instant::now();
 
@@ -141,5 +151,7 @@ where T: Source {
               load_frame_result.t_loaded - load_frame_result.t_imgproc,
               t_display_finish - load_frame_result.t_loaded);
         t_last_frame = t_display_finish;
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 }
