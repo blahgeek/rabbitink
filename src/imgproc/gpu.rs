@@ -26,6 +26,10 @@ pub struct GpuImgproc {
 
 const WORKGROUP_SIZE: (i32, i32) = (64, 1);
 
+const BAYERS4: [u32; 16] = [
+    0, 128, 32, 160, 192, 64, 224, 96, 48, 176, 16, 144, 240, 112, 208, 80,
+];
+
 impl GpuImgproc {
     pub async fn new(opts: ImgprocOptions) -> GpuImgproc {
         assert!(
@@ -85,6 +89,11 @@ impl GpuImgproc {
             contents: unsafe { std::slice::from_raw_parts(params_data.as_ptr() as *const u8, 16) },
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        let bayers4_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("bayers4"),
+            contents: unsafe { std::slice::from_raw_parts(BAYERS4.as_ptr() as *const u8, 16 * 4) },
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
 
         let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
@@ -113,6 +122,10 @@ impl GpuImgproc {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: bw_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: bayers4_buffer.as_entire_binding(),
                 },
             ],
         });
