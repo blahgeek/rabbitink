@@ -16,7 +16,7 @@ where
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Size {
     pub width: i32,
     pub height: i32,
@@ -34,7 +34,7 @@ where
     }
 }
 
-fn default_pitch<const BPP: i32>(width: i32) -> i32 {
+fn minimum_pitch<const BPP: i32>(width: i32) -> i32 {
     (width * BPP + 7) / 8
 }
 
@@ -42,6 +42,7 @@ fn default_pitch<const BPP: i32>(width: i32) -> i32 {
 pub trait ImageBase<const BPP: i32> {
     fn width(&self) -> i32;
     fn height(&self) -> i32;
+    fn size(&self) -> Size;
     fn pitch(&self) -> i32;
     fn is_continuous(&self) -> bool;
 }
@@ -54,6 +55,16 @@ pub trait ConstImage<const BPP: i32>: ImageBase<BPP> {
 pub trait Image<const BPP: i32>: ConstImage<BPP> {
     fn mut_ptr(&mut self, row: i32) -> *mut u8;
     fn mut_subimg(&mut self, pt: Point, size: Size) -> ImageView<BPP>;
+
+    fn copy_from(&mut self, src: &impl ConstImage<BPP>) {
+        assert_eq!(self.size(), src.size());
+        let copy_len = minimum_pitch::<BPP>(self.width()) as usize;
+        for y in 0..self.height() {
+            let dst_slice = unsafe { std::slice::from_raw_parts_mut(self.mut_ptr(y), copy_len) };
+            let src_slice = unsafe { std::slice::from_raw_parts(src.ptr(y), copy_len) };
+            dst_slice.copy_from_slice(src_slice);
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -66,10 +77,10 @@ struct Header<const BPP: i32> {
 
 impl<const BPP: i32> Header<BPP> {
     fn new(data_len: usize, width: i32, height: i32, pitch: Option<i32>) -> Self {
-        let default_pitch = default_pitch::<BPP>(width);
-        let pitch = pitch.unwrap_or(default_pitch);
+        let minimum_pitch = minimum_pitch::<BPP>(width);
+        let pitch = pitch.unwrap_or(minimum_pitch);
         assert!(
-            pitch >= default_pitch,
+            pitch >= minimum_pitch,
             "invalid pitch {} for width {} with {} bits-per-pixel",
             pitch,
             width,
@@ -127,11 +138,14 @@ where
     fn height(&self) -> i32 {
         self.header().height
     }
+    fn size(&self) -> Size {
+        (self.width(), self.height()).into()
+    }
     fn pitch(&self) -> i32 {
         self.header().pitch
     }
     fn is_continuous(&self) -> bool {
-        self.pitch() == default_pitch::<BPP>(self.width())
+        self.pitch() == minimum_pitch::<BPP>(self.width())
     }
 }
 
@@ -217,19 +231,25 @@ pub struct ImageBuffer<const BPP: i32> {
 
 impl<const BPP: i32> ImageBuffer<BPP> {
     pub fn new(width: i32, height: i32, pitch: Option<i32>) -> Self {
-        let default_pitch = default_pitch::<BPP>(width);
-        let pitch = pitch.unwrap_or(default_pitch);
+        let minimum_pitch = minimum_pitch::<BPP>(width);
+        let pitch = pitch.unwrap_or(minimum_pitch);
         let data = vec![0; (pitch * height) as usize];
         let header = Header::<BPP>::new(data.len(), width, height, Some(pitch));
         Self { data, header }
     }
 
     pub fn view(&self) -> ConstImageView<BPP> {
-        ConstImageView { header: self.header, data: self.data.as_slice() }
+        ConstImageView {
+            header: self.header,
+            data: self.data.as_slice(),
+        }
     }
 
     pub fn mut_view(&mut self) -> ImageView<BPP> {
-        ImageView { header: self.header, data: self.data.as_mut_slice() }
+        ImageView {
+            header: self.header,
+            data: self.data.as_mut_slice(),
+        }
     }
 }
 
@@ -282,6 +302,6 @@ mod tests {
         assert_eq!(sub0.width(), 64);
         assert_eq!(sub0.height(), 10);
         assert_eq!(sub0.pitch(), 13);
-        assert_eq!(unsafe {ptr.add(13 * 2 + 1)}, sub0.ptr(0));
+        assert_eq!(unsafe { ptr.add(13 * 2 + 1) }, sub0.ptr(0));
     }
 }
