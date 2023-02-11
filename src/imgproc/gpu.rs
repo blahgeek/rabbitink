@@ -1,5 +1,5 @@
+use log::debug;
 use wgpu::util::DeviceExt;
-use log::trace;
 
 use crate::image::*;
 
@@ -24,12 +24,14 @@ pub struct GpuImgproc {
     bw_stage_buffer: wgpu::Buffer,
 }
 
-const WORKGROUP_SIZE: (i32, i32) = (32, 2);
+const WORKGROUP_SIZE: (i32, i32) = (64, 1);
 
 impl GpuImgproc {
     pub async fn new(opts: ImgprocOptions) -> GpuImgproc {
-        assert!(opts.rgba_pitch % 4 == 0 && opts.bw_pitch % 4 == 0,
-                "gpu imgproc requires 4byte aligned");
+        assert!(
+            opts.rgba_pitch % 4 == 0 && opts.bw_pitch % 4 == 0,
+            "gpu imgproc requires 4byte aligned"
+        );
 
         let instance = wgpu::Instance::default();
 
@@ -37,7 +39,7 @@ impl GpuImgproc {
             .request_adapter(&wgpu::RequestAdapterOptions::default())
             .await
             .unwrap();
-        trace!("Initializing GPU imgproc: {:?}", adapter.get_info());
+        debug!("Initializing GPU imgproc: {:?}", adapter.get_info());
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor::default(), None)
@@ -60,7 +62,9 @@ impl GpuImgproc {
         let bw_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("bw"),
             size: (opts.image_size.height * opts.bw_pitch) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let bw_stage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -182,7 +186,11 @@ impl GpuImgproc {
             0,
             self.rgba_buffer.size(),
         );
-        encoder.clear_buffer(&self.bw_buffer, 0, wgpu::BufferSize::new(self.bw_buffer.size()));
+        encoder.clear_buffer(
+            &self.bw_buffer,
+            0,
+            wgpu::BufferSize::new(self.bw_buffer.size()),
+        );
 
         {
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
@@ -210,11 +218,15 @@ impl GpuImgproc {
         self.read_output(output_bw_img);
         let t_downloaded = std::time::Instant::now();
 
-        trace!("GPU imgproc processed one frame: upload {:?}, compute {:?}, download {:?}",
-               t_uploaded - t_start, t_computed - t_uploaded, t_downloaded - t_computed);
+        debug!(
+            "GPU imgproc processed one frame {:?}: upload {:?}, compute {:?}, download {:?}",
+            self.opts.image_size,
+            t_uploaded - t_start,
+            t_computed - t_uploaded,
+            t_downloaded - t_computed
+        );
     }
 }
-
 
 #[cfg(test)]
 mod tests {
