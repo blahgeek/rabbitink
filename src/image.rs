@@ -1,52 +1,79 @@
+#[derive(Clone, Copy, Debug)]
 pub struct Point {
     pub x: i32,
     pub y: i32,
 }
 
-impl<T> From<(T, T)> for Point where T: Into<i32> {
+impl<T> From<(T, T)> for Point
+where
+    T: Into<i32>,
+{
     fn from(value: (T, T)) -> Self {
-        Point { x: value.0.into(), y: value.1.into() }
+        Point {
+            x: value.0.into(),
+            y: value.1.into(),
+        }
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct Size {
     pub width: i32,
     pub height: i32,
 }
 
-impl<T> From<(T, T)> for Size where T: Into<i32> {
+impl<T> From<(T, T)> for Size
+where
+    T: Into<i32>,
+{
     fn from(value: (T, T)) -> Self {
-        Size { width: value.0.into(), height: value.1.into() }
+        Size {
+            width: value.0.into(),
+            height: value.1.into(),
+        }
     }
 }
 
-fn default_pitch<const BITS_PER_PIXEL: i32>(width: i32) -> i32 {
-    (width * BITS_PER_PIXEL + 7) / 8
+fn default_pitch<const BPP: i32>(width: i32) -> i32 {
+    (width * BPP + 7) / 8
 }
 
-pub struct Image<'a, const BITS_PER_PIXEL: i32> {
-    data: &'a mut [u8],
+// BPP: bits-per-pixel
+pub trait ImageBase<const BPP: i32> {
+    fn width(&self) -> i32;
+    fn height(&self) -> i32;
+    fn pitch(&self) -> i32;
+    fn is_continuous(&self) -> bool;
+}
 
+pub trait ConstImage<const BPP: i32>: ImageBase<BPP> {
+    fn ptr(&self, row: i32) -> *const u8;
+    fn subimg(&self, pt: Point, size: Size) -> ConstImageView<BPP>;
+}
+
+pub trait Image<const BPP: i32>: ConstImage<BPP> {
+    fn mut_ptr(&mut self, row: i32) -> *mut u8;
+    fn mut_subimg(&mut self, pt: Point, size: Size) -> ImageView<BPP>;
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Header<const BPP: i32> {
+    data_len: usize,
     width: i32,
     pitch: i32,
     height: i32,
 }
 
-impl<'a, const BITS_PER_PIXEL: i32> Image<'a, BITS_PER_PIXEL> {
-    pub fn new(
-        data: &'a mut [u8],
-        width: i32,
-        height: i32,
-        pitch: Option<i32>,
-    ) -> Image<'a, BITS_PER_PIXEL> {
-        let default_pitch = default_pitch::<BITS_PER_PIXEL>(width);
+impl<const BPP: i32> Header<BPP> {
+    fn new(data_len: usize, width: i32, height: i32, pitch: Option<i32>) -> Self {
+        let default_pitch = default_pitch::<BPP>(width);
         let pitch = pitch.unwrap_or(default_pitch);
         assert!(
             pitch >= default_pitch,
             "invalid pitch {} for width {} with {} bits-per-pixel",
             pitch,
             width,
-            BITS_PER_PIXEL
+            BPP
         );
         assert!(
             width > 0 && height > 0,
@@ -55,69 +82,188 @@ impl<'a, const BITS_PER_PIXEL: i32> Image<'a, BITS_PER_PIXEL> {
             height
         );
         assert!(
-            data.len() >= (height * pitch) as usize,
+            data_len >= (height * pitch) as usize,
             "invalid data len {} for height {} and pitch {}",
-            data.len(),
+            data_len,
             height,
             pitch
         );
-
-        Image {
-            data,
+        Header {
+            data_len,
             width,
             pitch,
             height,
         }
     }
 
-    pub fn width(&self) -> i32 { self.width }
-    pub fn height(&self) -> i32 { self.height }
-    pub fn pitch(&self) -> i32 { self.pitch }
-    pub fn is_continuous(&self) -> bool { self.pitch == default_pitch::<BITS_PER_PIXEL>(self.width) }
-    pub fn ptr(&self, row: i32) -> *const u8 { self.data[((row * self.pitch) as usize)..].as_ptr() }
-    pub fn ptr_mut(&mut self, row: i32) -> *mut u8 { self.data[((row * self.pitch) as usize)..].as_mut_ptr() }
-
-    pub fn subimg(&mut self, pt: Point, size: Size) -> Image<BITS_PER_PIXEL> {
-        assert!((pt.x * BITS_PER_PIXEL) % 8 == 0);
+    fn subimg(&self, pt: Point, size: Size) -> (Self, usize) {
+        assert!((pt.x * BPP) % 8 == 0);
         assert!(pt.x >= 0 && pt.x < self.width && pt.x + size.width < self.width);
         assert!(pt.y >= 0 && pt.y < self.height && pt.y + size.height < self.height);
-        let offset = (pt.y * self.pitch + pt.x * BITS_PER_PIXEL / 8) as usize;
-        Image { data: &mut self.data[offset..], width: size.width, pitch: self.pitch, height: size.height }
+        let offset = (pt.y * self.pitch + pt.x * BPP / 8) as usize;
+        (
+            Self {
+                data_len: self.data_len - offset,
+                width: size.width,
+                pitch: self.pitch,
+                height: size.height,
+            },
+            offset,
+        )
     }
 }
 
-pub struct ImageBuffer<const BITS_PER_PIXEL: i32> {
+trait HasHeader<const BPP: i32> {
+    fn header(&self) -> &Header<BPP>;
+}
+
+impl<const BPP: i32, T> ImageBase<BPP> for T
+where
+    T: HasHeader<BPP>,
+{
+    fn width(&self) -> i32 {
+        self.header().width
+    }
+    fn height(&self) -> i32 {
+        self.header().height
+    }
+    fn pitch(&self) -> i32 {
+        self.header().pitch
+    }
+    fn is_continuous(&self) -> bool {
+        self.pitch() == default_pitch::<BPP>(self.width())
+    }
+}
+
+pub struct ConstImageView<'a, const BPP: i32> {
+    header: Header<BPP>,
+    data: &'a [u8],
+}
+
+impl<'a, const BPP: i32> ConstImageView<'a, BPP> {
+    pub fn new(data: &'a [u8], width: i32, height: i32, pitch: Option<i32>) -> Self {
+        let header = Header::<BPP>::new(data.len(), width, height, pitch);
+        ConstImageView { header, data }
+    }
+}
+
+impl<'a, const BPP: i32> HasHeader<BPP> for ConstImageView<'a, BPP> {
+    fn header(&self) -> &Header<BPP> {
+        &self.header
+    }
+}
+
+impl<'a, const BPP: i32> ConstImage<BPP> for ConstImageView<'a, BPP> {
+    fn ptr(&self, row: i32) -> *const u8 {
+        self.data[((row * self.header.pitch) as usize)..].as_ptr()
+    }
+    fn subimg(&self, pt: Point, size: Size) -> ConstImageView<BPP> {
+        let (sub_hdr, offset) = self.header.subimg(pt, size);
+        ConstImageView {
+            header: sub_hdr,
+            data: &self.data[offset..],
+        }
+    }
+}
+
+pub struct ImageView<'a, const BPP: i32> {
+    header: Header<BPP>,
+    data: &'a mut [u8],
+}
+
+impl<'a, const BPP: i32> ImageView<'a, BPP> {
+    pub fn new(data: &'a mut [u8], width: i32, height: i32, pitch: Option<i32>) -> Self {
+        let header = Header::<BPP>::new(data.len(), width, height, pitch);
+        ImageView { header, data }
+    }
+}
+
+impl<'a, const BPP: i32> HasHeader<BPP> for ImageView<'a, BPP> {
+    fn header(&self) -> &Header<BPP> {
+        &self.header
+    }
+}
+
+impl<'a, const BPP: i32> ConstImage<BPP> for ImageView<'a, BPP> {
+    fn ptr(&self, row: i32) -> *const u8 {
+        self.data[((row * self.header.pitch) as usize)..].as_ptr()
+    }
+    fn subimg(&self, pt: Point, size: Size) -> ConstImageView<BPP> {
+        let (sub_hdr, offset) = self.header.subimg(pt, size);
+        ConstImageView {
+            header: sub_hdr,
+            data: &self.data[offset..],
+        }
+    }
+}
+
+impl<'a, const BPP: i32> Image<BPP> for ImageView<'a, BPP> {
+    fn mut_ptr(&mut self, row: i32) -> *mut u8 {
+        self.data[((row * self.header.pitch) as usize)..].as_mut_ptr()
+    }
+    fn mut_subimg(&mut self, pt: Point, size: Size) -> ImageView<BPP> {
+        let (sub_hdr, offset) = self.header.subimg(pt, size);
+        ImageView {
+            header: sub_hdr,
+            data: &mut self.data[offset..],
+        }
+    }
+}
+
+pub struct ImageBuffer<const BPP: i32> {
     data: Vec<u8>,
-    width: i32,
-    height: i32,
-    pitch: i32,
+    header: Header<BPP>,
 }
 
-impl<const BITS_PER_PIXEL: i32> ImageBuffer<BITS_PER_PIXEL> {
-    pub fn new(width: i32, height: i32, pitch: Option<i32>) -> ImageBuffer<BITS_PER_PIXEL> {
-        let default_pitch = default_pitch::<BITS_PER_PIXEL>(width);
+impl<const BPP: i32> ImageBuffer<BPP> {
+    pub fn new(width: i32, height: i32, pitch: Option<i32>) -> Self {
+        let default_pitch = default_pitch::<BPP>(width);
         let pitch = pitch.unwrap_or(default_pitch);
-        assert!(
-            pitch >= default_pitch,
-            "invalid pitch {} for width {} with {} bits-per-pixel",
-            pitch,
-            width,
-            BITS_PER_PIXEL
-        );
-        assert!(
-            width > 0 && height > 0,
-            "invalid width {} and height {}",
-            width,
-            height
-        );
-        ImageBuffer { data: vec![0; (pitch * height) as usize], width, height, pitch }
+        let data = vec![0; (pitch * height) as usize];
+        let header = Header::<BPP>::new(data.len(), width, height, Some(pitch));
+        Self { data, header }
     }
 
-    pub fn view(&mut self) -> Image<BITS_PER_PIXEL> {
-        Image { data: self.data.as_mut_slice(), width: self.width, pitch: self.pitch, height: self.height }
+    pub fn view(&self) -> ConstImageView<BPP> {
+        ConstImageView { header: self.header, data: self.data.as_slice() }
+    }
+
+    pub fn mut_view(&mut self) -> ImageView<BPP> {
+        ImageView { header: self.header, data: self.data.as_mut_slice() }
     }
 }
 
+impl<const BPP: i32> HasHeader<BPP> for ImageBuffer<BPP> {
+    fn header(&self) -> &Header<BPP> {
+        &self.header
+    }
+}
+
+impl<const BPP: i32> ConstImage<BPP> for ImageBuffer<BPP> {
+    fn ptr(&self, row: i32) -> *const u8 {
+        self.data[((row * self.header.pitch) as usize)..].as_ptr()
+    }
+    fn subimg(&self, pt: Point, size: Size) -> ConstImageView<BPP> {
+        let (sub_hdr, offset) = self.header.subimg(pt, size);
+        ConstImageView {
+            header: sub_hdr,
+            data: &self.data[offset..],
+        }
+    }
+}
+
+impl<const BPP: i32> Image<BPP> for ImageBuffer<BPP> {
+    fn mut_ptr(&mut self, row: i32) -> *mut u8 {
+        self.data[((row * self.header.pitch) as usize)..].as_mut_ptr()
+    }
+    fn mut_subimg(&mut self, pt: Point, size: Size) -> ImageView<BPP> {
+        let (sub_hdr, offset) = self.header.subimg(pt, size);
+        ImageView {
+            header: sub_hdr,
+            data: &mut self.data[offset..],
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -126,16 +272,16 @@ mod tests {
     #[test]
     fn test_1bpp() {
         let mut buf = ImageBuffer::<1>::new(100, 100, None);
-        let mut view = buf.view();
-        assert_eq!(view.width, 100);
-        assert_eq!(view.height, 100);
-        assert_eq!(view.pitch, 13);
+        let view = buf.mut_view();
+        assert_eq!(view.width(), 100);
+        assert_eq!(view.height(), 100);
+        assert_eq!(view.pitch(), 13);
         let ptr = view.ptr(0);
 
         let sub0 = view.subimg((8, 2).into(), (64, 10).into());
-        assert_eq!(sub0.width, 64);
-        assert_eq!(sub0.height, 10);
-        assert_eq!(sub0.pitch, 13);
+        assert_eq!(sub0.width(), 64);
+        assert_eq!(sub0.height(), 10);
+        assert_eq!(sub0.pitch(), 13);
         assert_eq!(unsafe {ptr.add(13 * 2 + 1)}, sub0.ptr(0));
     }
 }
