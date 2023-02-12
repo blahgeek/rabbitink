@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Point {
     pub x: i32,
     pub y: i32,
@@ -16,7 +16,7 @@ where
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Size {
     pub width: i32,
     pub height: i32,
@@ -65,6 +65,13 @@ pub trait Image<const BPP: i32>: ConstImage<BPP> {
             dst_slice.copy_from_slice(src_slice);
         }
     }
+
+    fn fill(&mut self, val: u8) {
+        for y in 0..self.height() {
+            let slice = unsafe { std::slice::from_raw_parts_mut(self.mut_ptr(y), self.pitch() as usize) };
+            slice.fill(val);
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -109,8 +116,8 @@ impl<const BPP: i32> Header<BPP> {
 
     fn subimg(&self, pt: Point, size: Size) -> (Self, usize) {
         assert!((pt.x * BPP) % 8 == 0);
-        assert!(pt.x >= 0 && pt.x < self.width && pt.x + size.width < self.width);
-        assert!(pt.y >= 0 && pt.y < self.height && pt.y + size.height < self.height);
+        assert!(pt.x >= 0 && pt.x < self.width && pt.x + size.width <= self.width);
+        assert!(pt.y >= 0 && pt.y < self.height && pt.y + size.height <= self.height);
         let offset = (pt.y * self.pitch + pt.x * BPP / 8) as usize;
         (
             Self {

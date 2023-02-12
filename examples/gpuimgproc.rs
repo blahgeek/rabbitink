@@ -1,5 +1,5 @@
 use rabbitink::image::*;
-use rabbitink::imgproc::gpu::{GpuImgproc, ImgprocOptions};
+use rabbitink::imgproc::{Imgproc, ImgprocOptions};
 
 use image as imagex; // external, for IO
 
@@ -27,7 +27,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut dst_img = ImageBuffer::<1>::new(src_img.width(), src_img.height(), None);
 
-    let imgproc = pollster::block_on(GpuImgproc::new(ImgprocOptions {
+    let imgproc = pollster::block_on(Imgproc::new(ImgprocOptions {
         image_size: src_img.size(),
         rgba_pitch: src_img.pitch(),
         bw_pitch: dst_img.pitch(),

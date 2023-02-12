@@ -1,15 +1,11 @@
-use std::{path::Path, fmt::Debug};
+use std::{fmt::Debug, path::Path};
 
-use log::{trace, info};
-use opencv::prelude::*;
-use opencv as cv;
 use anyhow::Context;
+use log::{info, trace};
 
-use super::serde::{BigEndianU16, BigEndianU32};
 use super::scsi;
-use crate::imgproc::bitpack;
-
-const LOAD_IMAGE_MAX_TRANSFER_SIZE: i32 = 60800;
+use super::serde::{BigEndianU16, BigEndianU32};
+use crate::image::*;
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum DisplayMode {
@@ -21,12 +17,6 @@ pub enum DisplayMode {
     GLD16,
     A2,
     DU4,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MemoryMode {
-    Default8bpp,
-    Pack1bpp,
 }
 
 #[repr(packed)]
@@ -96,103 +86,107 @@ struct DisplayAreaArgs {
     wait_ready: BigEndianU32,
 }
 
-
-pub struct IT8915 {
+// always black-white only
+pub struct MonoDriver {
     device: scsi::Device,
     sysinfo: Sysinfo,
-
-    mem_mode: MemoryMode,
     mem_pitch: u32,
 }
 
-const EXPECT_INQUERY_VENDOR_PRODUCT : &'static str = "Generic Storage RamDisc 1.00";
+const EXPECT_INQUERY_VENDOR_PRODUCT: &'static str = "Generic Storage RamDisc 1.00";
 
-
-impl IT8915 {
-    pub fn get_screen_size(&self) -> cv::core::Size2i {
-        cv::core::Size2i::new(self.sysinfo.width.val() as i32, self.sysinfo.height.val() as i32)
+impl MonoDriver {
+    pub fn get_screen_size(&self) -> Size {
+        (
+            self.sysinfo.width.val() as i32,
+            self.sysinfo.height.val() as i32,
+        )
+            .into()
     }
 
-    pub fn open(path: &Path) -> anyhow::Result<IT8915> {
+    pub fn get_mem_pitch(&self) -> i32 {
+        self.mem_pitch as i32
+    }
+
+    pub fn open(path: &Path) -> anyhow::Result<MonoDriver> {
         let mut device = scsi::Device::open(path)?;
 
         // inquery, check vendor
         let mut inquery_cmd = [0_u8; 16];
         inquery_cmd[0] = 0x12;
         let mut inquery_result_buf = [0_u8; 40];
-        device.io_read(&inquery_cmd, &mut inquery_result_buf)
+        device
+            .io_read(&inquery_cmd, &mut inquery_result_buf)
             .context("failed to inquery")?;
         let inquery_result_vendor_product = String::from_utf8_lossy(&inquery_result_buf[8..36]);
         trace!("Inquery result: {}", inquery_result_vendor_product);
         if inquery_result_vendor_product != EXPECT_INQUERY_VENDOR_PRODUCT {
-            anyhow::bail!("unexpected vendor product string: {}", inquery_result_vendor_product);
+            anyhow::bail!(
+                "unexpected vendor product string: {}",
+                inquery_result_vendor_product
+            );
         }
 
-        let sysinfo_cmd: [u8; 16] =
-            [0xfe, 0x00,
-             0x38, 0x39, 0x35, 0x31,  // "8951"
-             0x80, 0x00,
-             0x01, 0x00, 0x02, 0x00,  // version: 0x00010002
-             0x00, 0x00, 0x00, 0x00];
+        let sysinfo_cmd: [u8; 16] = [
+            0xfe, 0x00, 0x38, 0x39, 0x35, 0x31, // "8951"
+            0x80, 0x00, 0x01, 0x00, 0x02, 0x00, // version: 0x00010002
+            0x00, 0x00, 0x00, 0x00,
+        ];
         let mut sysinfo = Sysinfo::default();
-        device.io_read(&sysinfo_cmd, &mut sysinfo).context("failed to read sysinfo")?;
+        device
+            .io_read(&sysinfo_cmd, &mut sysinfo)
+            .context("failed to read sysinfo")?;
         trace!("Sysinfo: {:?}", sysinfo);
 
-        let mut res = IT8915 {
+        let mut res = MonoDriver {
             device,
             sysinfo,
-            mem_mode: MemoryMode::Default8bpp,
-            mem_pitch: sysinfo.width.val(),
+            mem_pitch: (sysinfo.width.val() + 31) / 8,
         };
-        res.set_memory_mode(MemoryMode::Default8bpp)?;
-        Ok(res)
-    }
-
-    pub fn set_memory_mode(&mut self, mode: MemoryMode) -> anyhow::Result<()> {
-        self.mem_mode = mode;
 
         // Enable/Disable 1bit drawing and image pitch mode
         // 0000 0000 0000 0110 0000 0000 0000 0000
         // |         |     ^^  |         |
         // 113B      113A      1139      1138
-        let mut up1sr = self.read_mem::<4>(0x1800_1138)?;
-        match mode {
-            MemoryMode::Pack1bpp => up1sr[2] |= 0x06,
-            MemoryMode::Default8bpp => up1sr[2] &= !0x06,
-        }
-        self.write_mem(0x1800_1138, &up1sr)?;
+        let mut up1sr = res.read_mem::<4>(0x1800_1138)?;
+        up1sr[2] |= 0x06;
+        res.write_mem(0x1800_1138, &up1sr)?;
 
         // Set bitmap mode color definition (0 - set black(0x00), 1 - set white(0xf0))
-        self.write_mem(0x1800_1250, match mode {
-            MemoryMode::Pack1bpp => &[0xf0, 0x00],
-            _ => &[0x00, 0x00],
-        })?;
+        res.write_mem(0x1800_1250, &[0xf0, 0x00])?;
 
-        self.mem_pitch = match mode {
-            // 4 byte align
-            MemoryMode::Pack1bpp => (self.get_screen_size().width as u32 + 31) / 8,
-            _ => self.get_screen_size().width as u32,
-        };
         // (not sure about why the "/4"... apparently the reg is in double-word)
-        self.write_mem(0x1800_124c, &[((self.mem_pitch / 4) & 0xff) as u8,
-                                      (((self.mem_pitch / 4) >> 8) & 0xff) as u8])?;
+        res.write_mem(
+            0x1800_124c,
+            &[
+                ((res.mem_pitch / 4) & 0xff) as u8,
+                (((res.mem_pitch / 4) >> 8) & 0xff) as u8,
+            ],
+        )?;
 
-        Ok(())
+        res.reset_display()?;
+
+        Ok(res)
     }
 
     pub fn reset_display(&mut self) -> anyhow::Result<()> {
-        let white_img: cv::core::Mat1b =
-            cv::core::Mat::new_size_with_default(
-                self.get_screen_size(),
-                opencv::core::CV_8U,
-                opencv::core::Scalar::all(0xf0 as f64))?
-            .try_into_typed()?;
+        let mut white_img = ImageBuffer::<1>::new(
+            self.get_screen_size().width,
+            self.get_screen_size().height,
+            Some(self.mem_pitch as i32),
+        );
+        white_img.fill(0xff);
+
         // although INIT would flush the display regardless of the memory content,
         // if we don't initialize the memory content, the following display cannot work correctly,
         // apparently they would depend on the last state.
         self.load_image_fullwidth(0, &white_img)?;
-        self.display_area(cv::core::Rect2i::from_point_size(cv::core::Point2i::new(0, 0), self.get_screen_size()),
-                          DisplayMode::INIT, true)
+        self.display_area(
+            (0, 0).into(),
+            self.get_screen_size(),
+            DisplayMode::INIT,
+            true,
+        )
     }
 
     pub fn pmic_control(&mut self, vcom: Option<u16>, power: Option<bool>) -> anyhow::Result<()> {
@@ -216,7 +210,7 @@ impl IT8915 {
     }
 
     pub fn read_mem<const LEN: usize>(&mut self, addr: u32) -> anyhow::Result<[u8; LEN]> {
-        let mut res : [u8; LEN] = [0_u8; LEN];
+        let mut res: [u8; LEN] = [0_u8; LEN];
         let cmd = MemIOCmd {
             hdr: 0xfe,
             addr: BigEndianU32::from(addr),
@@ -229,7 +223,7 @@ impl IT8915 {
     }
 
     pub fn read_busy_state(&mut self) -> anyhow::Result<bool> {
-        let res = self.read_mem::<2>(0x18001224)?;   // LUTAFSR + 0x18000000
+        let res = self.read_mem::<2>(0x18001224)?; // LUTAFSR + 0x18000000
         trace!("Read busy state: {:?}", res);
         let busy = res.iter().any(|x| *x != 0);
         Ok(busy)
@@ -243,7 +237,8 @@ impl IT8915 {
             len: BigEndianU16::from(u16::try_from(data.len()).expect("write_mem buf too long")),
             ..MemIOCmd::default()
         };
-        self.device.io_write_gather(&cmd, &[(data.as_ptr(), data.len())])?;
+        self.device
+            .io_write_gather(&cmd, &[(data.as_ptr(), data.len())])?;
         Ok(())
     }
 
@@ -252,111 +247,79 @@ impl IT8915 {
             hdr: 0xfe,
             addr: BigEndianU32::from(addr),
             cmd: 0xa5,
-            len: BigEndianU16::from(u16::try_from(data.len()).expect("write_mem_fast data too long")),
+            len: BigEndianU16::from(
+                u16::try_from(data.len()).expect("write_mem_fast data too long"),
+            ),
             ..MemIOCmd::default()
         };
-        self.device.io_write_gather(&cmd, &[(data.as_ptr(), data.len())])?;
-        Ok(())
-    }
-
-    // make sure that image size is within max transfer size
-    fn load_image_area_onestep(&mut self, pos: cv::core::Point2i, image: cv::core::Mat1b) -> anyhow::Result<()> {
-        trace!("Loading image area to pos {:?}, image size=({}, {})",
-               pos, image.cols(), image.rows());
-        let cmd: [u8; 16] = [
-            0xfe, 0x00, 0x00, 0x00, 0x00, 0x00, 0xa2, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-        let args = LoadImageAreaArgs {
-            addr: self.sysinfo.image_buf_base,
-            x: BigEndianU32::from(pos.x as u32),
-            y: BigEndianU32::from(pos.y as u32),
-            w: BigEndianU32::from(image.cols() as u32),
-            h: BigEndianU32::from(image.rows() as u32),
-        };
-
-        let mut data_iovec: Vec<(*const u8, usize)> = vec![
-            ((&args as *const LoadImageAreaArgs) as *const u8, std::mem::size_of::<LoadImageAreaArgs>()),
-        ];
-        for row in 0..image.rows() {
-            data_iovec.push((image.ptr(row).unwrap(), image.cols() as usize));
-        }
-        self.device.io_write_gather(&cmd, &data_iovec)?;
-        Ok(())
-    }
-
-    pub fn load_image_area(&mut self, pos: cv::core::Point2i, image: &cv::core::Mat1b) -> anyhow::Result<()> {
-        let (canvas_w, canvas_h) = (self.sysinfo.width.val(), self.sysinfo.height.val());
-        trace!("Loading image to pos {:?}, image size=({}, {})",
-               pos, image.cols(), image.rows());
-        if (pos.x + image.cols()) as u32 > canvas_w || (pos.y + image.rows()) as u32 > canvas_h {
-            anyhow::bail!("load image too large: pos={:?}, image size=({}, {})",
-                          pos, image.cols(), image.rows());
-        }
-
-        // fast path, if the image is full width
-        if pos.x == 0 && image.cols() == self.get_screen_size().width {
-            return self.load_image_fullwidth(pos.y as u32, image);
-        }
-
-        // slow path, only support 8bpp mode
-        assert_eq!(self.mem_mode, MemoryMode::Default8bpp,
-                   "Loading image non-full-row-area only support default 8bpp mode");
-        let rows_per_step = LOAD_IMAGE_MAX_TRANSFER_SIZE / image.cols();
-        assert!(rows_per_step > 0);
-
-        let mut row = 0_i32;
-        while row < image.rows() {
-            let subimg = image.row_bounds(row, i32::min(row + rows_per_step, image.rows())).unwrap();
-            self.load_image_area_onestep(cv::core::Point2i::new(pos.x, pos.y + row),
-                                         subimg.try_into_typed().unwrap())?;
-            row += rows_per_step;
-        }
-
+        self.device
+            .io_write_gather(&cmd, &[(data.as_ptr(), data.len())])?;
         Ok(())
     }
 
     // faster than load_image_area, but the image must cover full width
-    fn load_image_fullwidth(&mut self, row_offset: u32, image: &cv::core::Mat1b) -> anyhow::Result<()> {
-        trace!("Loading image fullwidth to row {}, image size=({}, {})",
-               row_offset, image.cols(), image.rows());
-        assert_eq!(image.cols(), self.get_screen_size().width);
+    pub fn load_image_fullwidth(
+        &mut self,
+        row_offset: u32,
+        image: &impl ConstImage<1>,
+    ) -> anyhow::Result<()> {
+        trace!(
+            "Loading image fullwidth to row {}, image size={:?}",
+            row_offset,
+            image.size()
+        );
+        assert_eq!(image.width(), self.get_screen_size().width);
+        assert_eq!(image.pitch(), self.mem_pitch as i32);
 
         let rows_per_step = ((u16::MAX as u32) / self.mem_pitch) as i32;
-        let mut row = 0;
-        while row < image.rows() {
-            let subimg : cv::core::Mat1b =
-                image.row_bounds(row, i32::min(row + rows_per_step, image.rows()))?.try_into_typed()?;
-            let packed = match self.mem_mode {
-                MemoryMode::Pack1bpp => bitpack::pack_image::<1>(&subimg, self.mem_pitch as i32),
-                MemoryMode::Default8bpp => bitpack::pack_image::<8>(&subimg, self.mem_pitch as i32),
+        let mut y = 0;
+        while y < image.height() {
+            let subimg = image.subimg(
+                (0, y).into(),
+                (image.width(), i32::min(rows_per_step, image.height() - y)).into(),
+            );
+            let bytes = unsafe {
+                std::slice::from_raw_parts(
+                    subimg.ptr(0),
+                    (subimg.height() * subimg.pitch()) as usize,
+                )
             };
-            self.write_mem_fast(self.sysinfo.image_buf_base.val() + self.mem_pitch * (row as u32 + row_offset),
-                                &packed)?;
+            self.write_mem_fast(
+                self.sysinfo.image_buf_base.val() + self.mem_pitch * (y as u32 + row_offset),
+                &bytes,
+            )?;
 
-            row += rows_per_step;
+            y += rows_per_step;
         }
 
         Ok(())
     }
 
-    pub fn display_area(&mut self, region: cv::core::Rect2i, mode: DisplayMode, wait_ready: bool) -> anyhow::Result<()> {
-        trace!("Displaying region {:?}, mode = {:?}", region, mode);
-        if self.mem_mode == MemoryMode::Pack1bpp {
-            assert!(region.x % 32 == 0, "Pack1bpp mode requires 4 byte align");
-            assert!(region.width % 32 == 0 || region.width == self.get_screen_size().width,
-                    "Pack1bpp mode requires 4 byte align");
-        }
+    pub fn display_area(
+        &mut self,
+        tl: Point,
+        size: Size,
+        mode: DisplayMode,
+        wait_ready: bool,
+    ) -> anyhow::Result<()> {
+        trace!("Displaying region {:?} {:?}, mode = {:?}", tl, size, mode);
+        assert!(tl.x % 32 == 0, "Pack1bpp mode requires 4 byte align");
+        assert!(
+            size.width % 32 == 0 || size.width == self.get_screen_size().width,
+            "Pack1bpp mode requires 4 byte align"
+        );
 
         let cmd: [u8; 16] = [
-            0xfe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x94, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+            0xfe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x94, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ];
         let args = DisplayAreaArgs {
             addr: self.sysinfo.image_buf_base,
             mode: BigEndianU32::from(mode as u32),
-            x: BigEndianU32::from(region.x as u32),
-            y: BigEndianU32::from(region.y as u32),
-            w: BigEndianU32::from(region.width as u32),
-            h: BigEndianU32::from(region.height as u32),
+            x: BigEndianU32::from(tl.x as u32),
+            y: BigEndianU32::from(tl.y as u32),
+            w: BigEndianU32::from(size.width as u32),
+            h: BigEndianU32::from(size.height as u32),
             wait_ready: BigEndianU32::from(if wait_ready { 1 } else { 0 }),
         };
 

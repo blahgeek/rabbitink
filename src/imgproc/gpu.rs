@@ -2,13 +2,7 @@ use log::debug;
 use wgpu::util::DeviceExt;
 
 use crate::image::*;
-
-#[derive(Clone, Copy, Debug)]
-pub struct ImgprocOptions {
-    pub image_size: Size,
-    pub rgba_pitch: i32,
-    pub bw_pitch: i32,
-}
+use super::ImgprocOptions;
 
 pub struct GpuImgproc {
     opts: ImgprocOptions,
