@@ -164,8 +164,6 @@ impl MonoDriver {
             ],
         )?;
 
-        res.reset_display()?;
-
         Ok(res)
     }
 

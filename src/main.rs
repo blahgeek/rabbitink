@@ -28,6 +28,7 @@ fn main() -> anyhow::Result<()> {
     let dev_path = PathBuf::from(&args.device);
     let mut dev = MonoDriver::open(&dev_path)?;
     dev.pmic_control(Some(2150), Some(true))?;
+    dev.reset_display()?;
 
     let source = XcbGrabSource::new(
         ":0.0",
