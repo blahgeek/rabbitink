@@ -81,11 +81,11 @@ where
         let screen_size = self.driver.get_screen_size();
         let t_load_start = std::time::Instant::now();
 
-        let rgba_img = self.source.get_frame()?;
-        if rgba_img.size() != screen_size {
+        let bgra_img = self.source.get_frame()?;
+        if bgra_img.size() != screen_size {
             bail!(
                 "Source returned invalid sized frame: {:?}, screen size {:?}",
-                rgba_img.size(),
+                bgra_img.size(),
                 screen_size
             );
         }
@@ -99,14 +99,14 @@ where
         if self.imgproc.is_none() {
             self.imgproc = Some(pollster::block_on(Imgproc::new(ImgprocOptions {
                 image_size: screen_size,
-                rgba_pitch: rgba_img.pitch(),
+                bgra_pitch: bgra_img.pitch(),
                 bw_pitch: self.driver.get_mem_pitch(),
             })));
         }
         self.imgproc
             .as_ref()
             .unwrap()
-            .process(&rgba_img, &mut new_frame);
+            .process(&bgra_img, &mut new_frame);
         let t_imgproc = std::time::Instant::now();
 
         let modified_range = match &self.loaded_frame {

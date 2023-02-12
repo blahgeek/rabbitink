@@ -12,8 +12,8 @@ pub struct GpuImgproc {
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::ComputePipeline,
 
-    rgba_buffer: wgpu::Buffer,
-    rgba_stage_buffer: wgpu::Buffer,
+    bgra_buffer: wgpu::Buffer,
+    bgra_stage_buffer: wgpu::Buffer,
     bw_buffer: wgpu::Buffer,
     bw_stage_buffer: wgpu::Buffer,
 }
@@ -27,7 +27,7 @@ const BAYERS4: [u32; 16] = [
 impl GpuImgproc {
     pub async fn new(opts: ImgprocOptions) -> GpuImgproc {
         assert!(
-            opts.rgba_pitch % 4 == 0 && opts.bw_pitch % 4 == 0,
+            opts.bgra_pitch % 4 == 0 && opts.bw_pitch % 4 == 0,
             "gpu imgproc requires 4byte aligned"
         );
 
@@ -44,15 +44,15 @@ impl GpuImgproc {
             .await
             .unwrap();
 
-        let rgba_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rgba"),
-            size: (opts.image_size.height * opts.rgba_pitch) as u64,
+        let bgra_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("bgra"),
+            size: (opts.image_size.height * opts.bgra_pitch) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let rgba_stage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rgba_staging"),
-            size: (opts.image_size.height * opts.rgba_pitch) as u64,
+        let bgra_stage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("bgra_staging"),
+            size: (opts.image_size.height * opts.bgra_pitch) as u64,
             usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::MAP_WRITE,
             mapped_at_creation: false,
         });
@@ -75,7 +75,7 @@ impl GpuImgproc {
         let params_data: Vec<i32> = vec![
             opts.image_size.width,
             opts.image_size.height,
-            opts.rgba_pitch,
+            opts.bgra_pitch,
             opts.bw_pitch,
         ];
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -111,7 +111,7 @@ impl GpuImgproc {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: rgba_buffer.as_entire_binding(),
+                    resource: bgra_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
@@ -130,8 +130,8 @@ impl GpuImgproc {
             queue,
             bind_group,
             pipeline,
-            rgba_buffer,
-            rgba_stage_buffer,
+            bgra_buffer,
+            bgra_stage_buffer,
             bw_buffer,
             bw_stage_buffer,
         }
@@ -147,19 +147,19 @@ impl GpuImgproc {
         receiver.recv().unwrap();
     }
 
-    fn write_input(&self, rgba_img: &impl ConstImage<32>) {
-        let slice = self.rgba_stage_buffer.slice(..);
+    fn write_input(&self, bgra_img: &impl ConstImage<32>) {
+        let slice = self.bgra_stage_buffer.slice(..);
         self.map_buffer_sync(&slice, wgpu::MapMode::Write);
         let mut stage_buf = slice.get_mapped_range_mut();
         let mut stage_buf_img = ImageView::<32>::new(
             &mut stage_buf,
             self.opts.image_size.width,
             self.opts.image_size.height,
-            Some(self.opts.rgba_pitch),
+            Some(self.opts.bgra_pitch),
         );
-        stage_buf_img.copy_from(rgba_img);
+        stage_buf_img.copy_from(bgra_img);
         drop(stage_buf);
-        self.rgba_stage_buffer.unmap();
+        self.bgra_stage_buffer.unmap();
     }
 
     fn read_output(&self, bw_img: &mut impl Image<1>) {
@@ -177,21 +177,21 @@ impl GpuImgproc {
         self.bw_stage_buffer.unmap();
     }
 
-    pub fn process(&self, input_rgba_img: &impl ConstImage<32>, output_bw_img: &mut impl Image<1>) {
+    pub fn process(&self, input_bgra_img: &impl ConstImage<32>, output_bw_img: &mut impl Image<1>) {
         let t_start = std::time::Instant::now();
 
-        self.write_input(input_rgba_img);
+        self.write_input(input_bgra_img);
         let t_uploaded = std::time::Instant::now();
 
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         encoder.copy_buffer_to_buffer(
-            &self.rgba_stage_buffer,
+            &self.bgra_stage_buffer,
             0,
-            &self.rgba_buffer,
+            &self.bgra_buffer,
             0,
-            self.rgba_buffer.size(),
+            self.bgra_buffer.size(),
         );
         encoder.clear_buffer(
             &self.bw_buffer,
@@ -241,25 +241,25 @@ mod tests {
 
     #[test]
     fn test_basic() {
-        let rgba_img_data = {
+        let bgra_img_data = {
             let mut v = Vec::<u8>::new();
             for i in 0..(4 * 32) {
                 v.push(if (i / 4) % 2 == 0 { 0xff } else { 0 });
             }
             v
         };
-        let rgb_img = ConstImageView::<32>::new(rgba_img_data.as_slice(), 32, 1, None);
+        let color_img = ConstImageView::<32>::new(bgra_img_data.as_slice(), 32, 1, None);
 
         let mut bw_img_data: Vec<u8> = vec![0; 4];
         let mut bw_img = ImageView::<1>::new(bw_img_data.as_mut_slice(), 32, 1, None);
 
         let imgproc = GpuImgproc::new(ImgprocOptions {
-            image_size: rgb_img.size(),
-            rgba_pitch: rgb_img.pitch(),
+            image_size: color_img.size(),
+            bgra_pitch: color_img.pitch(),
             bw_pitch: bw_img.pitch(),
         });
         let imgproc = pollster::block_on(imgproc);
-        imgproc.process(&rgb_img, &mut bw_img);
+        imgproc.process(&color_img, &mut bw_img);
 
         drop(bw_img);
 

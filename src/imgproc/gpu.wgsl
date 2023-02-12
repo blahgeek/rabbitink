@@ -1,7 +1,7 @@
 struct Params {
   width: u32,
   height: u32,
-  rgba_pitch: u32,
+  bgra_pitch: u32,
   bw_pitch: u32,
 }
 
@@ -11,7 +11,7 @@ var<uniform> params: Params;
 // WGSL does only have u32/i32, no u8
 
 @group(0) @binding(1)
-var<storage, read> rgba_img: array<u32>;
+var<storage, read> bgra_img: array<u32>;
 
 // the BW image is packed as 1 BIT per pixel
 
@@ -46,10 +46,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>,
   let workgroup_bw_32bit = &bw_32bit_arr[local_id.x / 32u];  // must match the workgroup size
 
   if (x < params.width && y < params.height) {
-    let rgba: u32 = rgba_img[y * params.rgba_pitch / 4u + x];
+    let bgra: u32 = bgra_img[y * params.bgra_pitch / 4u + x];
     // little endian
     let gray = rgb_to_gray_with_dithering(
-      vec3(rgba & 0xffu, (rgba >> 8u) & 0xffu, (rgba >> 16u) & 0xffu), x, y);
+      vec3((bgra >> 16u) & 0xffu), (bgra >> 8u) & 0xffu, bgra & 0xffu, x, y);
 
     if (gray != 0u) {
       atomicOr(workgroup_bw_32bit, 1u << (x % 32u));

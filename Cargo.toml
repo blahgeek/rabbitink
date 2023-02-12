@@ -5,6 +5,9 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["opencv"]
+
 [build-dependencies]
 bindgen = "0.63.0"
 
@@ -30,4 +33,8 @@ required-features = ["opencv"]
 
 [[example]]
 name = "grid"
+required-features = ["opencv"]
+
+[[example]]
+name = "screenshot"
 required-features = ["opencv"]
