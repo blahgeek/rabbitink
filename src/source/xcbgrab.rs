@@ -12,7 +12,7 @@ struct Shmem {
 
 impl Shmem {
     fn new(size: usize) -> anyhow::Result<Shmem> {
-        let id = unsafe { libc::shmget(libc::IPC_PRIVATE, size, libc::IPC_CREAT | 0777) };
+        let id = unsafe { libc::shmget(libc::IPC_PRIVATE, size, libc::IPC_CREAT | 0b111_111_111) };
         if id < 0 {
             bail!("failed to create shmem with size {}", size);
         }
