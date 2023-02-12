@@ -41,28 +41,43 @@ fn compute_modified_row_range(
     }
 }
 
-struct State<S> {
-    loaded_frame: Option<ImageBuffer<1>>,
-    display_dirty_range: (i32, i32), // dirty row range
-
-    display_full_refreshed: bool,
-
+pub struct Controller<S> {
     driver: MonoDriver,
     source: S,
     imgproc: Option<Imgproc>, // initialize on first frame, for correct pitch
+
+    loaded_frame: Option<ImageBuffer<1>>,
+
+    display_dirty_range: (i32, i32), // dirty row range
+    display_full_refreshed: bool,
+    displaying_row_map: Vec<bool>,
 }
 
 const EMPTY_DISPLAY_DIRTY_RANGE: (i32, i32) = (i32::MAX, i32::MIN);
+const DRIVER_POLL_READY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1);
+const SOURCE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
+const FULL_REFRESH_IDLE_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
 
-struct LoadFrameResult {
-    t_load_start: std::time::Instant,
-    t_got_frame: std::time::Instant,
-    t_imgproc: std::time::Instant,
-    t_loaded: std::time::Instant,
-}
+impl<S> Controller<S>
+where
+    S: Source,
+{
+    pub fn new(driver: MonoDriver, source: S) -> Controller<S> {
+        let screen_size = driver.get_screen_size();
+        Controller {
+            driver,
+            source,
+            imgproc: None,
+            loaded_frame: None,
+            display_dirty_range: EMPTY_DISPLAY_DIRTY_RANGE,
+            display_full_refreshed: false,
+            displaying_row_map: vec![false; screen_size.height as usize],
+        }
+    }
 
-impl<S: Source> State<S> {
-    fn load_frame(&mut self) -> anyhow::Result<LoadFrameResult> {
+    // get frame and load into driver,modify display_dirty_range
+    // return true if it's modified (display required)
+    fn load_frame(&mut self) -> anyhow::Result<bool> {
         let screen_size = self.driver.get_screen_size();
         let t_load_start = std::time::Instant::now();
 
@@ -113,15 +128,32 @@ impl<S: Source> State<S> {
         }
         let t_loaded = std::time::Instant::now();
 
-        Ok(LoadFrameResult {
-            t_load_start,
-            t_got_frame,
-            t_imgproc,
-            t_loaded,
-        })
+        debug!("New frame loaded, row {:?} loaded, row {:?} dirty accumulated. Cost: get frame: {:?}, imgproc: {:?}, load: {:?}",
+               modified_range, self.display_dirty_range,
+               t_got_frame - t_load_start,
+               t_imgproc - t_got_frame,
+               t_loaded - t_imgproc);
+        Ok(self.display_dirty_range.1 > self.display_dirty_range.0)
     }
 
-    fn display(&mut self) -> anyhow::Result<()> {
+    // return if current display dirty range is actually not blocked by displaying rows
+    fn can_display_nonoverlapping(&self) -> bool {
+        (self.display_dirty_range.0..self.display_dirty_range.1)
+            .all(|i| !self.displaying_row_map[i as usize])
+    }
+
+    fn poll_display_ready(&mut self, block: bool) -> anyhow::Result<bool> {
+        while self.driver.read_busy_state()? {
+            if !block {
+                return Ok(false);
+            }
+            std::thread::sleep(DRIVER_POLL_READY_INTERVAL);
+        }
+        self.displaying_row_map.fill(false);
+        return Ok(true);
+    }
+
+    fn do_display_nonblock(&mut self) -> anyhow::Result<()> {
         assert!(self.display_dirty_range.0 < self.display_dirty_range.1);
         self.driver.display_area(
             (0, self.display_dirty_range.0).into(),
@@ -131,69 +163,60 @@ impl<S: Source> State<S> {
             )
                 .into(),
             DisplayMode::A2,
-            true,
+            false,
         )?;
+        for i in self.display_dirty_range.0..self.display_dirty_range.1 {
+            self.displaying_row_map[i as usize] = true;
+        }
         self.display_dirty_range = EMPTY_DISPLAY_DIRTY_RANGE;
         self.display_full_refreshed = false;
         Ok(())
     }
 
-    fn display_full_refresh(&mut self) -> anyhow::Result<()> {
+    fn do_display_full_refresh_block(&mut self) -> anyhow::Result<()> {
         self.driver.display_area(
             (0, 0).into(),
             self.driver.get_screen_size(),
             DisplayMode::GC16,
             true,
         )?;
+        self.displaying_row_map.fill(false);
         self.display_dirty_range = EMPTY_DISPLAY_DIRTY_RANGE;
         self.display_full_refreshed = true;
         Ok(())
     }
-}
 
-pub fn run_forever<T>(driver: MonoDriver, source: T) -> anyhow::Result<()>
-where
-    T: Source,
-{
-    let mut s = State {
-        loaded_frame: None,
-        display_dirty_range: EMPTY_DISPLAY_DIRTY_RANGE,
-        display_full_refreshed: true,
-        imgproc: None,
-        driver,
-        source,
-    };
-
-    let mut t_last_frame = std::time::Instant::now();
-    loop {
-        let load_frame_result = s.load_frame()?;
-
-        if s.display_dirty_range.0 >= s.display_dirty_range.1 {
-            // frame not changed
-            if t_last_frame.elapsed() > std::time::Duration::from_secs(5)
-                && !s.display_full_refreshed
-            {
-                info!("Full refresh!");
-                s.display_full_refresh()?;
-            } else {
-                std::thread::sleep(std::time::Duration::from_millis(20));
+    pub fn run_forever(&mut self) -> anyhow::Result<()> {
+        let mut t_last_update = std::time::Instant::now();
+        loop {
+            let need_display = self.load_frame()?;
+            if !need_display {
+                // frame not changed
+                if t_last_update.elapsed() > FULL_REFRESH_IDLE_DELAY && !self.display_full_refreshed
+                {
+                    info!("Full refresh!");
+                    self.poll_display_ready(/* block */ true)?;
+                    self.do_display_full_refresh_block()?;
+                } else {
+                    std::thread::sleep(SOURCE_POLL_INTERVAL);
+                }
+                continue;
             }
-            continue;
-        }
 
-        s.display()?;
-        while s.driver.read_busy_state()? {
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
-        let t_display_finish = std::time::Instant::now();
+            if !self.poll_display_ready(/* block */ false)? && !self.can_display_nonoverlapping() {
+                // cannot display now. we would wait for ready and loop again to get the newest frame
+                self.poll_display_ready(/* block */ true)?;
+                continue;
+            }
 
-        debug!("New frame displayed. Interval: {:?}. Cost: wait {:?}, get frame: {:?}, imgproc: {:?}, load: {:?}, display: {:?}",
-              t_display_finish - t_last_frame,
-              load_frame_result.t_load_start - t_last_frame,
-              load_frame_result.t_got_frame - load_frame_result.t_load_start,
-              load_frame_result.t_imgproc - load_frame_result.t_got_frame,
-              load_frame_result.t_loaded - load_frame_result.t_imgproc,
-              t_display_finish - load_frame_result.t_loaded);
-        t_last_frame = t_display_finish;
+            self.do_display_nonblock()?;
+
+            let t_update = std::time::Instant::now();
+            debug!(
+                "New frame displayed, interval: {:?}",
+                t_update - t_last_update
+            );
+            t_last_update = t_update;
+        }
     }
 }

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use rabbitink::control;
+use rabbitink::control::Controller;
 use rabbitink::driver::it8915::MonoDriver;
 use rabbitink::source::XcbGrabSource;
 
@@ -38,5 +38,6 @@ fn main() -> anyhow::Result<()> {
         )),
     )?;
 
-    control::run_forever(dev, source)
+    let mut controller = Controller::new(dev, source);
+    controller.run_forever()
 }
