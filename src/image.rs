@@ -312,3 +312,8 @@ mod tests {
         assert_eq!(unsafe { ptr.add(13 * 2 + 1) }, sub0.ptr(0));
     }
 }
+
+pub mod convert;
+
+#[cfg(feature = "opencv")]
+pub mod cv_adapter;

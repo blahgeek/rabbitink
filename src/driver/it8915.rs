@@ -295,6 +295,16 @@ impl MonoDriver {
         Ok(())
     }
 
+    // same as load_image_fullwidth, but accept 8bit image
+    pub fn load_image_fullwidth_8bit(
+        &mut self,
+        row_offset: u32,
+        image: &impl ConstImage<8>,
+    ) -> anyhow::Result<()> {
+        let packed = convert::pack(image, self.get_mem_pitch());
+        self.load_image_fullwidth(row_offset, &packed)
+    }
+
     pub fn display_area(
         &mut self,
         tl: Point,

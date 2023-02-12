@@ -18,15 +18,16 @@ libc = "0.2.139"
 xcb = { version = "1.2.0", features = ["shm", "xfixes", "shape"] }
 wgpu = "0.15.1"
 pollster = "0.3.0"
+opencv = { version = "0.75", optional = true, default-features = false, features = ["imgproc", "imgcodecs"]}
 
 [dev-dependencies]
 criterion = "0.4.0"
-opencv = { version = "0.75", default-features = false, features = ["imgproc", "imgcodecs"]}
 image = "0.24.5"
 
-[[bench]]
-name = "imgproc_bench"
-harness = false
+[[example]]
+name = "clock"
+required-features = ["opencv"]
 
-# [[example]]
-# name = "dithering"
+[[example]]
+name = "grid"
+required-features = ["opencv"]

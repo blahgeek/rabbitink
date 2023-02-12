@@ -23,8 +23,4 @@ fn add_binding(header_path: &str) {
 
 fn main() {
     add_binding("src/driver/scsi/bindings.h");
-
-    add_binding("src/vncclient/bindings.h");
-    println!("cargo:rustc-link-lib=vncclient");
-
 }
