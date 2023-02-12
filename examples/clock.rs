@@ -23,6 +23,9 @@ struct Args {
 
     #[arg(long, default_value_t = 0)]
     repeat: i32,
+
+    #[arg(long, default_value_t = -1)]
+    wait: i32,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -76,11 +79,6 @@ fn main() -> anyhow::Result<()> {
         }
         info!("clock: {}, loaded image, {:?}", n, start.elapsed());
 
-        while dev.read_busy_state()? {
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
-        info!("clock: {}, wait previous, {:?}", n, start.elapsed());
-
         for y in 0..y_repeat {
             dev.display_area(
                 (0, args.height * y).into(),
@@ -95,8 +93,12 @@ fn main() -> anyhow::Result<()> {
             start.elapsed()
         );
 
-        while dev.read_busy_state()? {
-            std::thread::sleep(std::time::Duration::from_millis(1));
+        if args.wait < 0 {
+            while dev.read_busy_state()? {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        } else if args.wait > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(args.wait as u64));
         }
         info!("clock: {} done, cost {:?}", n, start.elapsed());
     }
