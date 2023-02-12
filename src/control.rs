@@ -43,7 +43,7 @@ fn compute_modified_row_range(
 
 struct State<S> {
     loaded_frame: Option<ImageBuffer<1>>,
-    display_dirty_region: (Point, Point), // top-left, bottom-right
+    display_dirty_range: (i32, i32), // dirty row range
 
     display_full_refreshed: bool,
 
@@ -51,6 +51,8 @@ struct State<S> {
     source: S,
     imgproc: Option<Imgproc>, // initialize on first frame, for correct pitch
 }
+
+const EMPTY_DISPLAY_DIRTY_RANGE: (i32, i32) = (i32::MAX, i32::MIN);
 
 struct LoadFrameResult {
     t_load_start: std::time::Instant,
@@ -103,14 +105,9 @@ impl<S: Source> State<S> {
             );
             self.driver
                 .load_image_fullwidth(modified_range.0 as u32, &load_subimg)?;
-
-            self.display_dirty_region = (
-                (0, i32::min(self.display_dirty_region.0.y, modified_range.0)).into(),
-                (
-                    new_frame.width(),
-                    i32::max(self.display_dirty_region.1.y, modified_range.1),
-                )
-                    .into(),
+            self.display_dirty_range = (
+                i32::min(self.display_dirty_range.0, modified_range.0),
+                i32::max(self.display_dirty_range.1, modified_range.1),
             );
             self.loaded_frame = Some(new_frame);
         }
@@ -125,17 +122,18 @@ impl<S: Source> State<S> {
     }
 
     fn display(&mut self) -> anyhow::Result<()> {
+        assert!(self.display_dirty_range.0 < self.display_dirty_range.1);
         self.driver.display_area(
-            self.display_dirty_region.0,
+            (0, self.display_dirty_range.0).into(),
             (
-                self.display_dirty_region.1.x - self.display_dirty_region.0.x,
-                self.display_dirty_region.1.y - self.display_dirty_region.0.y,
+                self.driver.get_screen_size().width,
+                self.display_dirty_range.1 - self.display_dirty_range.0,
             )
                 .into(),
             DisplayMode::A2,
             true,
         )?;
-        self.display_dirty_region = ((0, 0).into(), (0, 0).into());
+        self.display_dirty_range = EMPTY_DISPLAY_DIRTY_RANGE;
         self.display_full_refreshed = false;
         Ok(())
     }
@@ -147,7 +145,7 @@ impl<S: Source> State<S> {
             DisplayMode::GC16,
             true,
         )?;
-        self.display_dirty_region = ((0, 0).into(), (0, 0).into());
+        self.display_dirty_range = EMPTY_DISPLAY_DIRTY_RANGE;
         self.display_full_refreshed = true;
         Ok(())
     }
@@ -159,7 +157,7 @@ where
 {
     let mut s = State {
         loaded_frame: None,
-        display_dirty_region: ((0, 0).into(), (0, 0).into()),
+        display_dirty_range: EMPTY_DISPLAY_DIRTY_RANGE,
         display_full_refreshed: true,
         imgproc: None,
         driver,
@@ -170,7 +168,7 @@ where
     loop {
         let load_frame_result = s.load_frame()?;
 
-        if s.display_dirty_region.0 == s.display_dirty_region.1 {
+        if s.display_dirty_range.0 >= s.display_dirty_range.1 {
             // frame not changed
             if t_last_frame.elapsed() > std::time::Duration::from_secs(5)
                 && !s.display_full_refreshed
@@ -197,7 +195,5 @@ where
               load_frame_result.t_loaded - load_frame_result.t_imgproc,
               t_display_finish - load_frame_result.t_loaded);
         t_last_frame = t_display_finish;
-
-        // std::thread::sleep(std::time::Duration::from_millis(100));
     }
 }

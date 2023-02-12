@@ -2,14 +2,20 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use rabbitink::source::XcbGrabSource;
-use rabbitink::driver::it8915::MonoDriver;
 use rabbitink::control;
+use rabbitink::driver::it8915::MonoDriver;
+use rabbitink::source::XcbGrabSource;
 
 #[derive(Parser, Debug)]
 struct Args {
     #[arg(short, long)]
     device: String,
+
+    #[arg(long, default_value_t = 0)]
+    grab_offx: i32,
+
+    #[arg(long, default_value_t = 0)]
+    grab_offy: i32,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -23,7 +29,13 @@ fn main() -> anyhow::Result<()> {
     let mut dev = MonoDriver::open(&dev_path)?;
     dev.pmic_control(Some(2150), Some(true))?;
 
-    let source = XcbGrabSource::new(":0.0", Some(((0, 0).into(), dev.get_screen_size())))?;
+    let source = XcbGrabSource::new(
+        ":0.0",
+        Some((
+            (args.grab_offx, args.grab_offy).into(),
+            dev.get_screen_size(),
+        )),
+    )?;
 
     control::run_forever(dev, source)
 }
