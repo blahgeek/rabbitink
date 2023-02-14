@@ -227,6 +227,27 @@ impl MonoDriver {
         Ok(busy)
     }
 
+    pub fn read_temperature(&mut self) -> anyhow::Result<u8> {
+        let cmd: [u8; 16] = [
+            0xfe, 0, 0, 0, 0, 0,
+            0xa4, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let mut res: [u8; 4] = [0; 4];
+        self.device.io_read(&cmd, &mut res)?;
+        Ok(res[0])
+    }
+
+    // NOTE: there doesn't seem to be a way to un-set the force temperature (aside from restart)
+    pub fn set_force_temperature(&mut self, val: u8) -> anyhow::Result<()> {
+        let cmd: [u8; 16] = [
+            0xfe, 0, 0, 0, 0, 0,
+            0xa4, 0x01, val, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let mut res: [u8; 4] = [0; 4];
+        self.device.io_read(&cmd, &mut res)?;
+        Ok(())
+    }
+
     fn write_mem(&mut self, addr: u32, data: &[u8]) -> anyhow::Result<()> {
         let cmd = MemIOCmd {
             hdr: 0xfe,
