@@ -49,7 +49,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>,
     let bgra: u32 = bgra_img[y * params.bgra_pitch / 4u + x];
     // little endian
     let gray = rgb_to_gray_with_dithering(
-      vec3((bgra >> 16u) & 0xffu), (bgra >> 8u) & 0xffu, bgra & 0xffu, x, y);
+      vec3((bgra >> 16u) & 0xffu, (bgra >> 8u) & 0xffu, bgra & 0xffu), x, y);
 
     if (gray != 0u) {
       atomicOr(workgroup_bw_32bit, 1u << (x % 32u));
