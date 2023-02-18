@@ -367,6 +367,7 @@ impl MonoDriver {
     }
 
     pub fn read_current_waveform(&mut self) -> anyhow::Result<Waveform> {
+        // TODO: this does not seem stable. only valid for 6inch model
         let data_addr: u32 = 0x9c3e8;
         const MAXLEN: usize = 256 * 64;
 

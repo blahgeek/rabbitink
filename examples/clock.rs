@@ -26,6 +26,9 @@ struct Args {
 
     #[arg(long, default_value_t = -1)]
     wait: i32,
+
+    #[arg(long)]
+    vcom: u16,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -37,7 +40,7 @@ fn main() -> anyhow::Result<()> {
 
     let dev_path = PathBuf::from(&args.device);
     let mut dev = MonoDriver::open(&dev_path)?;
-    dev.pmic_control(Some(2150), Some(true))?;
+    dev.pmic_control(Some(args.vcom), Some(true))?;
     dev.reset_display()?;
 
     let screen_size = dev.get_screen_size();
