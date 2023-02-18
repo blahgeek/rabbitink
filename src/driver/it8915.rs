@@ -5,6 +5,7 @@ use log::{info, trace};
 
 use super::scsi;
 use super::serde::{BigEndianU16, BigEndianU32};
+use super::waveform::Waveform;
 use crate::image::*;
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -228,10 +229,7 @@ impl MonoDriver {
     }
 
     pub fn read_temperature(&mut self) -> anyhow::Result<u8> {
-        let cmd: [u8; 16] = [
-            0xfe, 0, 0, 0, 0, 0,
-            0xa4, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        ];
+        let cmd: [u8; 16] = [0xfe, 0, 0, 0, 0, 0, 0xa4, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut res: [u8; 4] = [0; 4];
         self.device.io_read(&cmd, &mut res)?;
         Ok(res[0])
@@ -239,10 +237,7 @@ impl MonoDriver {
 
     // NOTE: there doesn't seem to be a way to un-set the force temperature (aside from restart)
     pub fn set_force_temperature(&mut self, val: u8) -> anyhow::Result<()> {
-        let cmd: [u8; 16] = [
-            0xfe, 0, 0, 0, 0, 0,
-            0xa4, 0x01, val, 0, 0, 0, 0, 0, 0, 0,
-        ];
+        let cmd: [u8; 16] = [0xfe, 0, 0, 0, 0, 0, 0xa4, 0x01, val, 0, 0, 0, 0, 0, 0, 0];
         let mut res: [u8; 4] = [0; 4];
         self.device.io_read(&cmd, &mut res)?;
         Ok(())
@@ -354,5 +349,27 @@ impl MonoDriver {
 
         self.device.io_write(&cmd, &args)?;
         Ok(())
+    }
+
+    pub fn read_current_waveform(&mut self) -> anyhow::Result<Waveform> {
+        let data_addr: u32 = 0x9c3e8;
+        const MAXLEN: usize = 256 * 64;
+
+        let buf = self.read_mem::<MAXLEN>(data_addr)?;
+        let waveform = Waveform::new(&buf)?;
+
+        // TODO: this does not seem stable
+        // let endpointer_addr: u32 = 0x73464;
+        // let endpointer_buf = self.read_mem::<4>(endpointer_addr)?;
+        // trace!("endpointer: {:?}", BigEndianU32(endpointer_buf));
+        // let expected_frames = (BigEndianU32(endpointer_buf).val() as i32 - data_addr as i32) / 64;
+        // if waveform.frame_count() as i32 != expected_frames {
+        //     anyhow::bail!(
+        //         "unexpected waveform frame count: {} vs {}",
+        //         waveform.frame_count(),
+        //         expected_frames
+        //     );
+        // }
+        Ok(waveform)
     }
 }

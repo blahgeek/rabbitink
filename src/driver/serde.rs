@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 #[repr(packed)]
 #[derive(Clone, Copy, Default)]
-pub struct BigEndianU32 ([u8; 4]);
+pub struct BigEndianU32 (pub [u8; 4]);
 
 impl BigEndianU32 {
     pub fn val(&self) -> u32 {
@@ -24,7 +24,7 @@ impl Debug for BigEndianU32 {
 
 #[repr(packed)]
 #[derive(Clone, Copy, Default)]
-pub struct BigEndianU16 ([u8; 2]);
+pub struct BigEndianU16 (pub [u8; 2]);
 
 impl BigEndianU16 {
     pub fn val(&self) -> u16 {
