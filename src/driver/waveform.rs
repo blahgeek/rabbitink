@@ -15,8 +15,8 @@ impl Debug for Waveform {
                     let val2bit = (lut[idx / 4] >> ((idx % 4) * 2)) & 0x3;
                     match val2bit {
                         0 => write!(f, "-")?,
-                        1 => write!(f, "↓")?,
-                        2 => write!(f, "↑")?,
+                        1 => write!(f, "v")?,
+                        2 => write!(f, "^")?,
                         _ => write!(f, "?")?,
                     }
                 }

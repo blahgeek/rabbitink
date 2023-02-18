@@ -223,7 +223,6 @@ impl MonoDriver {
 
     pub fn read_busy_state(&mut self) -> anyhow::Result<bool> {
         let res = self.read_mem::<2>(0x18001224)?; // LUTAFSR + 0x18000000
-        trace!("Read busy state: {:?}", res);
         let busy = res.iter().any(|x| *x != 0);
         Ok(busy)
     }
