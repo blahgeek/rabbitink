@@ -1,8 +1,10 @@
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use clap::Parser;
 
-use rabbitink::control::Controller;
+use rabbitink::control::{ControlOptions, Controller};
 use rabbitink::driver::it8915::MonoDriver;
 use rabbitink::source::XcbGrabSource;
 
@@ -41,6 +43,21 @@ fn main() -> anyhow::Result<()> {
         )),
     )?;
 
-    let mut controller = Controller::new(dev, source);
-    controller.run_forever()
+    let full_refresh_flag = Arc::new(AtomicBool::default());
+    signal_hook::flag::register(signal_hook::consts::SIGUSR1, full_refresh_flag.clone())?;
+
+    let terminate_flag = Arc::new(AtomicBool::default());
+    for s in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
+        signal_hook::flag::register(s, terminate_flag.clone());
+    }
+
+    let mut controller = Controller::new(
+        dev,
+        source,
+        ControlOptions {
+            full_refresh_flag,
+            terminate_flag,
+        },
+    );
+    controller.run_loop()
 }

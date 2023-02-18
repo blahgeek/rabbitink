@@ -22,6 +22,7 @@ xcb = { version = "1.2.0", features = ["shm", "xfixes", "shape"] }
 wgpu = "0.15.1"
 pollster = "0.3.0"
 opencv = { version = "0.75", optional = true, default-features = false, features = ["imgproc", "imgcodecs"]}
+signal-hook = "0.3.15"
 
 [dev-dependencies]
 criterion = "0.4.0"

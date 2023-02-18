@@ -1,5 +1,7 @@
 use anyhow::bail;
 use log::{debug, info};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::driver::it8915::{DisplayMode, MonoDriver};
 use super::image::*;
@@ -41,9 +43,16 @@ fn compute_modified_row_range(
     }
 }
 
+pub struct ControlOptions {
+    pub full_refresh_flag: Arc<AtomicBool>,
+    pub terminate_flag: Arc<AtomicBool>,
+}
+
 pub struct Controller<S> {
     driver: MonoDriver,
     source: S,
+    options: ControlOptions,
+
     imgproc: Option<Imgproc>, // initialize on first frame, for correct pitch
 
     loaded_frame: Option<ImageBuffer<1>>,
@@ -62,11 +71,12 @@ impl<S> Controller<S>
 where
     S: Source,
 {
-    pub fn new(driver: MonoDriver, source: S) -> Controller<S> {
+    pub fn new(driver: MonoDriver, source: S, options: ControlOptions) -> Controller<S> {
         let screen_size = driver.get_screen_size();
         Controller {
             driver,
             source,
+            options,
             imgproc: None,
             loaded_frame: None,
             display_dirty_range: EMPTY_DISPLAY_DIRTY_RANGE,
@@ -186,20 +196,23 @@ where
         Ok(())
     }
 
-    pub fn run_forever(&mut self) -> anyhow::Result<()> {
+    pub fn run_loop(&mut self) -> anyhow::Result<()> {
         let mut t_last_update = std::time::Instant::now();
-        loop {
+        while !self.options.terminate_flag.swap(false, Ordering::Relaxed) {
             let need_display = self.load_frame()?;
+
+            let full_refresh = self.options.full_refresh_flag.swap(false, Ordering::Relaxed) ||
+                (!need_display && t_last_update.elapsed() > FULL_REFRESH_IDLE_DELAY && !self.display_full_refreshed);
+            if full_refresh {
+                info!("Full refresh!");
+                self.poll_display_ready(/* block */ true)?;
+                self.do_display_full_refresh_block()?;
+                continue;
+            }
+
             if !need_display {
                 // frame not changed
-                if t_last_update.elapsed() > FULL_REFRESH_IDLE_DELAY && !self.display_full_refreshed
-                {
-                    info!("Full refresh!");
-                    self.poll_display_ready(/* block */ true)?;
-                    self.do_display_full_refresh_block()?;
-                } else {
-                    std::thread::sleep(SOURCE_POLL_INTERVAL);
-                }
+                std::thread::sleep(SOURCE_POLL_INTERVAL);
                 continue;
             }
 
@@ -218,5 +231,7 @@ where
             );
             t_last_update = t_update;
         }
+        self.driver.reset_display()?;
+        Ok(())
     }
 }
