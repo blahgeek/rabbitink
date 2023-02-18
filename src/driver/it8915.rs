@@ -142,7 +142,7 @@ impl MonoDriver {
         let mut res = MonoDriver {
             device,
             sysinfo,
-            mem_pitch: (sysinfo.width.val() + 31) / 8,
+            mem_pitch: ((sysinfo.width.val() + 31) / 32) * 4, // 4byte align
         };
 
         // Enable/Disable 1bit drawing and image pitch mode
