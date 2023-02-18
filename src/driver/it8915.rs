@@ -333,13 +333,28 @@ impl MonoDriver {
             "Pack1bpp mode requires 4 byte align"
         );
 
+        let mode_val = match self.sysinfo.mode_no.val() {
+            8 => mode as u32,
+            6 => match mode {
+                DisplayMode::INIT | DisplayMode::DU | DisplayMode::GC16 | DisplayMode::GL16 => {
+                    mode as u32
+                }
+                DisplayMode::A2 | DisplayMode::DU4 => mode as u32 - 2,
+                _ => anyhow::bail!("unsupported mode {:?} in this device", mode),
+            },
+            _ => anyhow::bail!(
+                "unsupported device with mode_no {}",
+                self.sysinfo.mode_no.val()
+            ),
+        };
+
         let cmd: [u8; 16] = [
             0xfe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x94, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00,
         ];
         let args = DisplayAreaArgs {
             addr: self.sysinfo.image_buf_base,
-            mode: BigEndianU32::from(mode as u32),
+            mode: BigEndianU32::from(mode_val),
             x: BigEndianU32::from(tl.x as u32),
             y: BigEndianU32::from(tl.y as u32),
             w: BigEndianU32::from(size.width as u32),
