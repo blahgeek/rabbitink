@@ -48,7 +48,7 @@ fn main() -> anyhow::Result<()> {
 
     let terminate_flag = Arc::new(AtomicBool::default());
     for s in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
-        signal_hook::flag::register(s, terminate_flag.clone());
+        signal_hook::flag::register(s, terminate_flag.clone())?;
     }
 
     let mut controller = Controller::new(
