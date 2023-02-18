@@ -18,7 +18,7 @@ log = "0.4.17"
 nix = { version = "0.26.2", features = ["ioctl", "fs"] }
 clap = { version = "4.1.4", features = ["derive"] }
 libc = "0.2.139"
-xcb = { version = "1.2.0", features = ["shm", "xfixes", "shape"] }
+xcb = { version = "1.2.0", features = ["shm", "xfixes", "shape", "screensaver"] }
 wgpu = "0.15.1"
 pollster = "0.3.0"
 opencv = { version = "0.75", optional = true, default-features = false, features = ["imgproc", "imgcodecs"]}
