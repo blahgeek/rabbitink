@@ -1,7 +1,7 @@
 use anyhow::bail;
 use log::{debug, info};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use super::driver::it8915::{DisplayMode, MonoDriver};
 use super::image::*;
@@ -65,7 +65,9 @@ pub struct Controller<S> {
 const EMPTY_DISPLAY_DIRTY_RANGE: (i32, i32) = (i32::MAX, i32::MIN);
 const DRIVER_POLL_READY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1);
 const SOURCE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
-const FULL_REFRESH_IDLE_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+
+const FULL_REFRESH_IDLE_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
+const DU_REFRESH_ROW_RATIO_THRESHOLD: f32 = 0.4; // do a DU (instead of A2) refresh if more than this ratio of rows are changed
 
 impl<S> Controller<S>
 where
@@ -165,14 +167,22 @@ where
 
     fn do_display_nonblock(&mut self) -> anyhow::Result<()> {
         assert!(self.display_dirty_range.0 < self.display_dirty_range.1);
+        let screen_size = self.driver.get_screen_size();
+        let mode = if self.display_dirty_range.1 - self.display_dirty_range.0
+            < (screen_size.height as f32 * DU_REFRESH_ROW_RATIO_THRESHOLD) as i32
+        {
+            DisplayMode::A2
+        } else {
+            DisplayMode::DU
+        };
         self.driver.display_area(
             (0, self.display_dirty_range.0).into(),
             (
-                self.driver.get_screen_size().width,
+                screen_size.width,
                 self.display_dirty_range.1 - self.display_dirty_range.0,
             )
                 .into(),
-            DisplayMode::A2,
+            mode,
             false,
         )?;
         for i in self.display_dirty_range.0..self.display_dirty_range.1 {
@@ -201,8 +211,13 @@ where
         while !self.options.terminate_flag.swap(false, Ordering::Relaxed) {
             let need_display = self.load_frame()?;
 
-            let full_refresh = self.options.full_refresh_flag.swap(false, Ordering::Relaxed) ||
-                (!need_display && t_last_update.elapsed() > FULL_REFRESH_IDLE_DELAY && !self.display_full_refreshed);
+            let full_refresh = self
+                .options
+                .full_refresh_flag
+                .swap(false, Ordering::Relaxed)
+                || (!need_display
+                    && t_last_update.elapsed() > FULL_REFRESH_IDLE_DELAY
+                    && !self.display_full_refreshed);
             if full_refresh {
                 info!("Full refresh!");
                 self.poll_display_ready(/* block */ true)?;
