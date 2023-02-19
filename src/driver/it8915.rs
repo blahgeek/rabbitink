@@ -250,8 +250,7 @@ impl MonoDriver {
             len: BigEndianU16::from(u16::try_from(data.len()).expect("write_mem buf too long")),
             ..MemIOCmd::default()
         };
-        self.device
-            .io_write_gather(&cmd, &[(data.as_ptr(), data.len())])?;
+        self.device.io_write_bytes(&cmd, data)?;
         Ok(())
     }
 
@@ -265,8 +264,7 @@ impl MonoDriver {
             ),
             ..MemIOCmd::default()
         };
-        self.device
-            .io_write_gather(&cmd, &[(data.as_ptr(), data.len())])?;
+        self.device.io_write_bytes(&cmd, data)?;
         Ok(())
     }
 
