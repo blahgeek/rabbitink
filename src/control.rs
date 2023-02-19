@@ -8,39 +8,26 @@ use super::image::*;
 use super::imgproc::{Imgproc, ImgprocOptions};
 use super::source::Source;
 
-fn compute_modified_row_range(
-    m_a: &impl ConstImage<1>,
-    m_b: &impl ConstImage<1>,
-) -> Option<(i32, i32)> {
+type RowSet = std::collections::BTreeSet<i32>;
+
+fn compute_modified_row_range(m_a: &impl ConstImage<1>, m_b: &impl ConstImage<1>) -> RowSet {
     assert_eq!(m_a.size(), m_b.size());
     assert_eq!(m_a.pitch(), m_b.pitch());
-    let row_modified_status: Vec<(usize, bool)> = (0..m_a.height())
-        .map(|y| {
-            let ptr_a = m_a.ptr(y);
-            let ptr_b = m_b.ptr(y);
-            let cmp_res = unsafe {
-                libc::memcmp(
-                    ptr_a as *const libc::c_void,
-                    ptr_b as *const libc::c_void,
-                    m_a.pitch() as usize,
-                )
-            };
-            return cmp_res != 0;
-        })
-        .enumerate()
-        .collect();
 
-    let start = row_modified_status.iter().find(|x| x.1).map(|x| x.0 as i32);
-    if let Some(start) = start {
-        let end = row_modified_status
-            .iter()
-            .rfind(|x| x.1)
-            .map(|x| 1 + x.0 as i32)
-            .unwrap();
-        Some((start, end))
-    } else {
-        None
-    }
+    let modified_rows = (0..m_a.height()).filter(|y| {
+        let y = *y;
+        let ptr_a = m_a.ptr(y);
+        let ptr_b = m_b.ptr(y);
+        let cmp_res = unsafe {
+            libc::memcmp(
+                ptr_a as *const libc::c_void,
+                ptr_b as *const libc::c_void,
+                m_a.pitch() as usize,
+            )
+        };
+        return cmp_res != 0;
+    });
+    RowSet::from_iter(modified_rows)
 }
 
 pub struct ControlOptions {
@@ -57,12 +44,11 @@ pub struct Controller<S> {
 
     loaded_frame: Option<ImageBuffer<1>>,
 
-    display_dirty_range: (i32, i32), // dirty row range
-    display_full_refreshed: bool,
-    displaying_row_map: Vec<bool>,
+    dirty_rows: RowSet,
+    displaying_rows: RowSet,
+    full_refreshed: bool,
 }
 
-const EMPTY_DISPLAY_DIRTY_RANGE: (i32, i32) = (i32::MAX, i32::MIN);
 const DRIVER_POLL_READY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1);
 const SOURCE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
 
@@ -74,22 +60,21 @@ where
     S: Source,
 {
     pub fn new(driver: MonoDriver, source: S, options: ControlOptions) -> Controller<S> {
-        let screen_size = driver.get_screen_size();
         Controller {
             driver,
             source,
             options,
             imgproc: None,
             loaded_frame: None,
-            display_dirty_range: EMPTY_DISPLAY_DIRTY_RANGE,
-            display_full_refreshed: false,
-            displaying_row_map: vec![false; screen_size.height as usize],
+            dirty_rows: RowSet::default(),
+            displaying_rows: RowSet::default(),
+            full_refreshed: false,
         }
     }
 
     // get frame and load into driver,modify display_dirty_range
     // return true if it's modified (display required)
-    fn load_frame(&mut self) -> anyhow::Result<bool> {
+    fn load_frame(&mut self) -> anyhow::Result<()> {
         let screen_size = self.driver.get_screen_size();
         let t_load_start = std::time::Instant::now();
 
@@ -121,37 +106,46 @@ where
             .process(&bgra_img, &mut new_frame);
         let t_imgproc = std::time::Instant::now();
 
-        let modified_range = match &self.loaded_frame {
-            None => Some((0, screen_size.height)),
+        let mut modified_range = match &self.loaded_frame {
+            None => RowSet::from_iter(0..screen_size.height),
             Some(loaded_frame) => compute_modified_row_range(&new_frame, loaded_frame),
         };
-        if let Some(modified_range) = modified_range {
+        if !modified_range.is_empty() {
             let load_subimg = new_frame.subimg(
-                (0, modified_range.0).into(),
-                (screen_size.width, modified_range.1 - modified_range.0).into(),
+                (0, *modified_range.first().unwrap()).into(),
+                (
+                    screen_size.width,
+                    *modified_range.last().unwrap() - modified_range.first().unwrap() + 1,
+                )
+                    .into(),
             );
             self.driver
-                .load_image_fullwidth(modified_range.0 as u32, &load_subimg)?;
-            self.display_dirty_range = (
-                i32::min(self.display_dirty_range.0, modified_range.0),
-                i32::max(self.display_dirty_range.1, modified_range.1),
-            );
+                .load_image_fullwidth(*modified_range.first().unwrap() as u32, &load_subimg)?;
+            self.dirty_rows.append(&mut modified_range);
+            drop(modified_range);
             self.loaded_frame = Some(new_frame);
         }
         let t_loaded = std::time::Instant::now();
 
-        debug!("New frame loaded, row {:?} loaded, row {:?} dirty accumulated. Cost: get frame: {:?}, imgproc: {:?}, load: {:?}",
-               modified_range, self.display_dirty_range,
+        debug!("New frame loaded, {} rows dirty accumulated. Cost: get frame: {:?}, imgproc: {:?}, load: {:?}",
+               self.dirty_rows.len(),
                t_got_frame - t_load_start,
                t_imgproc - t_got_frame,
                t_loaded - t_imgproc);
-        Ok(self.display_dirty_range.1 > self.display_dirty_range.0)
+        Ok(())
     }
 
     // return if current display dirty range is actually not blocked by displaying rows
+    // NOTE that we only display one full range
     fn can_display_nonoverlapping(&self) -> bool {
-        (self.display_dirty_range.0..self.display_dirty_range.1)
-            .all(|i| !self.displaying_row_map[i as usize])
+        if self.dirty_rows.is_empty() || self.displaying_rows.is_empty() {
+            return false;
+        }
+        let dirty_start = *self.dirty_rows.first().unwrap();
+        let dirty_end = *self.dirty_rows.last().unwrap() + 1;
+        self.displaying_rows
+            .iter()
+            .all(|x| *x < dirty_start || *x >= dirty_end)
     }
 
     fn poll_display_ready(&mut self, block: bool) -> anyhow::Result<bool> {
@@ -161,35 +155,31 @@ where
             }
             std::thread::sleep(DRIVER_POLL_READY_INTERVAL);
         }
-        self.displaying_row_map.fill(false);
+        self.displaying_rows.clear();
         return Ok(true);
     }
 
     fn do_display_nonblock(&mut self) -> anyhow::Result<()> {
-        assert!(self.display_dirty_range.0 < self.display_dirty_range.1);
+        assert!(!self.dirty_rows.is_empty());
         let screen_size = self.driver.get_screen_size();
-        let mode = if self.display_dirty_range.1 - self.display_dirty_range.0
+        let mode = if (self.dirty_rows.len() as i32)
             < (screen_size.height as f32 * DU_REFRESH_ROW_RATIO_THRESHOLD) as i32
         {
             DisplayMode::A2
         } else {
             DisplayMode::DU
         };
+        let dirty_start = *self.dirty_rows.first().unwrap();
+        let dirty_end = *self.dirty_rows.last().unwrap() + 1;
         self.driver.display_area(
-            (0, self.display_dirty_range.0).into(),
-            (
-                screen_size.width,
-                self.display_dirty_range.1 - self.display_dirty_range.0,
-            )
-                .into(),
+            (0, dirty_start).into(),
+            (screen_size.width, dirty_end - dirty_start).into(),
             mode,
             false,
         )?;
-        for i in self.display_dirty_range.0..self.display_dirty_range.1 {
-            self.displaying_row_map[i as usize] = true;
-        }
-        self.display_dirty_range = EMPTY_DISPLAY_DIRTY_RANGE;
-        self.display_full_refreshed = false;
+        self.displaying_rows.extend(dirty_start..dirty_end);
+        self.dirty_rows.clear();
+        self.full_refreshed = false;
         Ok(())
     }
 
@@ -200,16 +190,17 @@ where
             DisplayMode::GC16,
             true,
         )?;
-        self.displaying_row_map.fill(false);
-        self.display_dirty_range = EMPTY_DISPLAY_DIRTY_RANGE;
-        self.display_full_refreshed = true;
+        self.dirty_rows.clear();
+        self.displaying_rows.clear();
+        self.full_refreshed = true;
         Ok(())
     }
 
     pub fn run_loop(&mut self) -> anyhow::Result<()> {
         let mut t_last_update = std::time::Instant::now();
         while !self.options.terminate_flag.swap(false, Ordering::Relaxed) {
-            let need_display = self.load_frame()?;
+            self.load_frame()?;
+            let need_display = !self.dirty_rows.is_empty();
 
             let full_refresh = self
                 .options
@@ -217,7 +208,7 @@ where
                 .swap(false, Ordering::Relaxed)
                 || (!need_display
                     && t_last_update.elapsed() > FULL_REFRESH_IDLE_DELAY
-                    && !self.display_full_refreshed);
+                    && !self.full_refreshed);
             if full_refresh {
                 info!("Full refresh!");
                 self.poll_display_ready(/* block */ true)?;
