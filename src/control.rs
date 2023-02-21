@@ -52,7 +52,7 @@ pub struct Controller<S> {
 const DRIVER_POLL_READY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1);
 const SOURCE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
 
-const FULL_REFRESH_IDLE_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
+const FULL_REFRESH_IDLE_DELAY: std::time::Duration = std::time::Duration::from_secs(120);
 const DU_REFRESH_ROW_RATIO_THRESHOLD: f32 = 0.4; // do a DU (instead of A2) refresh if more than this ratio of rows are changed
 
 impl<S> Controller<S>
