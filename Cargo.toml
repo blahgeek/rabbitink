@@ -23,6 +23,8 @@ wgpu = "0.15.1"
 pollster = "0.3.0"
 opencv = { version = "0.75", optional = true, default-features = false, features = ["imgproc", "imgcodecs"]}
 signal-hook = "0.3.15"
+rusb = "0.9.1"
+regex = "1.7.1"
 
 [dev-dependencies]
 criterion = "0.4.0"

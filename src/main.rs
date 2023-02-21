@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -30,8 +29,7 @@ fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    let dev_path = PathBuf::from(&args.device);
-    let mut dev = MonoDriver::open(&dev_path)?;
+    let mut dev = MonoDriver::open(&args.device)?;
     dev.pmic_control(Some(args.vcom), Some(true))?;
     dev.reset_display()?;
 

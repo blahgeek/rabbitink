@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::io::Write;
 
 use clap::Parser;
@@ -27,8 +26,7 @@ fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    let dev_path = PathBuf::from(&args.device);
-    let mut dev = MonoDriver::open(&dev_path)?;
+    let mut dev = MonoDriver::open(&args.device)?;
 
     let mut output = std::fs::File::create(args.output)?;
     for addr in (args.start .. (args.start + args.len_kb * 1024)).step_by(1024) {

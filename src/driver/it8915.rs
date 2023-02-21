@@ -1,4 +1,4 @@
-use std::{fmt::Debug, path::Path};
+use std::fmt::Debug;
 
 use anyhow::Context;
 use log::{info, trace};
@@ -109,8 +109,8 @@ impl MonoDriver {
         self.mem_pitch as i32
     }
 
-    pub fn open(path: &Path) -> anyhow::Result<MonoDriver> {
-        let mut device = scsi::Device::open(path)?;
+    pub fn open(desc: &str) -> anyhow::Result<MonoDriver> {
+        let mut device = scsi::Device::open(desc)?;
 
         // inquery, check vendor
         let mut inquery_cmd = [0_u8; 16];
