@@ -3,7 +3,7 @@ use log::{debug, info};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use super::driver::it8915::{DisplayMode, IT8915};
+use super::driver::it8915::{DisplayMode, IT8915, MemMode};
 use super::image::*;
 use super::imgproc::{MonoImgproc, MonoImgprocOptions};
 use super::source::Source;
@@ -96,13 +96,13 @@ where
         let mut new_frame = ImageBuffer::<1>::new(
             screen_size.width,
             screen_size.height,
-            Some(self.driver.get_mem_pitch()),
+            Some(self.driver.get_mem_pitch(MemMode::Mem1bpp)),
         );
         if self.imgproc.is_none() {
             self.imgproc = Some(pollster::block_on(MonoImgproc::new(MonoImgprocOptions {
                 image_size: screen_size,
                 bgra_pitch: bgra_img.pitch(),
-                bw_pitch: self.driver.get_mem_pitch(),
+                bw_pitch: self.driver.get_mem_pitch(MemMode::Mem1bpp),
             })));
         }
         let dithering_method = match *self.options.run_mode.lock().unwrap() {
@@ -128,7 +128,7 @@ where
                     .into(),
             );
             self.driver
-                .load_image_fullwidth(*modified_range.first().unwrap() as u32, &load_subimg)?;
+                .load_image_fullwidth_1bpp(*modified_range.first().unwrap() as u32, &load_subimg)?;
             self.dirty_rows.append(&mut modified_range);
             drop(modified_range);
             self.loaded_frame = Some(new_frame);
@@ -190,6 +190,7 @@ where
             (0, dirty_start).into(),
             (screen_size.width, dirty_end - dirty_start).into(),
             mode,
+            MemMode::Mem1bpp,
             false,
         )?;
         self.displaying_rows.extend(dirty_start..dirty_end);
@@ -203,6 +204,7 @@ where
             (0, 0).into(),
             self.driver.get_screen_size(),
             DisplayMode::GC16,
+            MemMode::Mem1bpp,
             true,
         )?;
         self.dirty_rows.clear();

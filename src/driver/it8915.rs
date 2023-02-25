@@ -20,6 +20,12 @@ pub enum DisplayMode {
     DU4,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MemMode {
+    Mem1bpp,
+    Mem8bpp,
+}
+
 #[repr(packed)]
 #[derive(Clone, Copy, Debug, Default)]
 #[allow(dead_code)]
@@ -87,11 +93,13 @@ struct DisplayAreaArgs {
     wait_ready: BigEndianU32,
 }
 
-// always black-white only
 pub struct IT8915 {
     device: scsi::Device,
     sysinfo: Sysinfo,
-    mem_pitch: u32,
+    active_mem_mode: MemMode,
+
+    mem_pitch_8bpp: u32,
+    mem_pitch_1bpp: u32,
 }
 
 const EXPECT_INQUERY_VENDOR_PRODUCT: &'static str = "Generic Storage RamDisc 1.00";
@@ -105,8 +113,11 @@ impl IT8915 {
             .into()
     }
 
-    pub fn get_mem_pitch(&self) -> i32 {
-        self.mem_pitch as i32
+    pub fn get_mem_pitch(&self, mem_mode: MemMode) -> i32 {
+        match mem_mode {
+            MemMode::Mem1bpp => self.mem_pitch_1bpp as i32,
+            MemMode::Mem8bpp => self.mem_pitch_8bpp as i32,
+        }
     }
 
     pub fn open(desc: &str) -> anyhow::Result<IT8915> {
@@ -139,51 +150,64 @@ impl IT8915 {
             .context("failed to read sysinfo")?;
         trace!("Sysinfo: {:?}", sysinfo);
 
+        assert!(sysinfo.width.val() % 4 == 0); // not sure what will happen in this case
         let mut res = IT8915 {
             device,
             sysinfo,
-            mem_pitch: ((sysinfo.width.val() + 31) / 32) * 4, // 4byte align
+            active_mem_mode: MemMode::Mem1bpp,
+            mem_pitch_8bpp: sysinfo.width.val(),
+            mem_pitch_1bpp: ((sysinfo.width.val() + 31) / 32) * 4, // 4byte align
         };
 
+        // default 1bpp
+        res.switch_mem_mode(MemMode::Mem1bpp)?;
+        Ok(res)
+    }
+
+    fn switch_mem_mode(&mut self, mem_mode: MemMode) -> anyhow::Result<()> {
         // Enable/Disable 1bit drawing and image pitch mode
         // 0000 0000 0000 0110 0000 0000 0000 0000
         // |         |     ^^  |         |
         // 113B      113A      1139      1138
-        let mut up1sr = res.read_mem::<4>(0x1800_1138)?;
-        up1sr[2] |= 0x06;
-        res.write_mem(0x1800_1138, &up1sr)?;
+        let mut up1sr = self.read_mem::<4>(0x1800_1138)?;
+        match mem_mode {
+            MemMode::Mem1bpp => up1sr[2] |= 0x06,
+            MemMode::Mem8bpp => up1sr[2] &= 0xf9,
+        }
+        self.write_mem(0x1800_1138, &up1sr)?;
 
         // Set bitmap mode color definition (0 - set black(0x00), 1 - set white(0xf0))
-        res.write_mem(0x1800_1250, &[0xf0, 0x00])?;
+        self.write_mem(0x1800_1250, &[0xf0, 0x00])?;
 
         // (not sure about why the "/4"... apparently the reg is in double-word)
-        res.write_mem(
+        self.write_mem(
             0x1800_124c,
             &[
-                ((res.mem_pitch / 4) & 0xff) as u8,
-                (((res.mem_pitch / 4) >> 8) & 0xff) as u8,
+                ((self.mem_pitch_1bpp / 4) & 0xff) as u8,
+                (((self.mem_pitch_1bpp / 4) >> 8) & 0xff) as u8,
             ],
         )?;
 
-        Ok(res)
+        Ok(())
     }
 
     pub fn reset_display(&mut self) -> anyhow::Result<()> {
         let mut white_img = ImageBuffer::<1>::new(
             self.get_screen_size().width,
             self.get_screen_size().height,
-            Some(self.mem_pitch as i32),
+            Some(self.mem_pitch_1bpp as i32),
         );
         white_img.fill(0xff);
 
         // although INIT would flush the display regardless of the memory content,
         // if we don't initialize the memory content, the following display cannot work correctly,
         // apparently they would depend on the last state.
-        self.load_image_fullwidth(0, &white_img)?;
+        self.load_image_fullwidth_1bpp(0, &white_img)?;
         self.display_area(
             (0, 0).into(),
             self.get_screen_size(),
             DisplayMode::INIT,
+            MemMode::Mem1bpp,
             true,
         )
     }
@@ -268,21 +292,22 @@ impl IT8915 {
         Ok(())
     }
 
-    // faster than load_image_area, but the image must cover full width
-    pub fn load_image_fullwidth(
+    fn load_image_fullwidth_generic<const BPP: i32, IMG: ConstImage<BPP>>(
         &mut self,
         row_offset: u32,
-        image: &impl ConstImage<1>,
+        image: &IMG,
+        pitch: u32,
     ) -> anyhow::Result<()> {
         trace!(
-            "Loading image fullwidth to row {}, image size={:?}",
+            "Loading image fullwidth to row {}, BPP {}, image size={:?}",
             row_offset,
+            BPP,
             image.size()
         );
         assert_eq!(image.width(), self.get_screen_size().width);
-        assert_eq!(image.pitch(), self.mem_pitch as i32);
+        assert_eq!(image.pitch(), pitch as i32);
 
-        let rows_per_step = ((u16::MAX as u32) / self.mem_pitch) as i32;
+        let rows_per_step = ((u16::MAX as u32) / pitch) as i32;
         let mut y = 0;
         while y < image.height() {
             let subimg = image.subimg(
@@ -295,25 +320,36 @@ impl IT8915 {
                     (subimg.height() * subimg.pitch()) as usize,
                 )
             };
-            self.write_mem_fast(
-                self.sysinfo.image_buf_base.val() + self.mem_pitch * (y as u32 + row_offset),
-                &bytes,
-            )?;
-
+            self.write_mem_fast(self.sysinfo.image_buf_base.val() + pitch * (y as u32 + row_offset), &bytes)?;
             y += rows_per_step;
         }
 
         Ok(())
     }
 
-    // same as load_image_fullwidth, but accept 8bit image
-    pub fn load_image_fullwidth_8bit(
+    pub fn load_image_fullwidth_1bpp(
+        &mut self,
+        row_offset: u32,
+        image: &impl ConstImage<1>,
+    ) -> anyhow::Result<()> {
+        self.load_image_fullwidth_generic(row_offset, image, self.mem_pitch_1bpp)
+    }
+
+    pub fn load_image_fullwidth_1bpp_from_8bpp(
         &mut self,
         row_offset: u32,
         image: &impl ConstImage<8>,
     ) -> anyhow::Result<()> {
-        let packed = convert::pack(image, self.get_mem_pitch());
-        self.load_image_fullwidth(row_offset, &packed)
+        let packed = convert::pack(image, self.mem_pitch_1bpp as i32);
+        self.load_image_fullwidth_1bpp(row_offset, &packed)
+    }
+
+    pub fn load_image_fullwidth_8bpp(
+        &mut self,
+        row_offset: u32,
+        image: &impl ConstImage<8>,
+    ) -> anyhow::Result<()> {
+        self.load_image_fullwidth_generic(row_offset, image, self.mem_pitch_8bpp)
     }
 
     pub fn display_area(
@@ -321,6 +357,7 @@ impl IT8915 {
         tl: Point,
         size: Size,
         mode: DisplayMode,
+        mem_mode: MemMode,
         wait_ready: bool,
     ) -> anyhow::Result<()> {
         trace!("Displaying region {:?} {:?}, mode = {:?}", tl, size, mode);
@@ -345,6 +382,10 @@ impl IT8915 {
             ),
         };
 
+        if self.active_mem_mode != mem_mode {
+            self.switch_mem_mode(mem_mode)?;
+            self.active_mem_mode = mem_mode;
+        }
         let cmd: [u8; 16] = [
             0xfe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x94, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00,

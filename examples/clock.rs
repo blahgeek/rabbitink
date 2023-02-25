@@ -2,7 +2,7 @@ use clap::Parser;
 use log::info;
 use opencv as cv;
 use opencv::prelude::*;
-use rabbitink::driver::it8915::{DisplayMode, IT8915};
+use rabbitink::driver::it8915::{DisplayMode, IT8915, MemMode};
 use rabbitink::image::cv_adapter;
 
 #[derive(Parser, Debug)]
@@ -72,7 +72,7 @@ fn main() -> anyhow::Result<()> {
 
         info!("clock: {}, start", n);
         for y in 0..y_repeat {
-            dev.load_image_fullwidth_8bit(
+            dev.load_image_fullwidth_1bpp_from_8bpp(
                 (args.height * y) as u32,
                 &cv_adapter::cvmat_image_view::<8>(img.as_untyped()),
             )?;
@@ -84,6 +84,7 @@ fn main() -> anyhow::Result<()> {
                 (0, args.height * y).into(),
                 (screen_size.width, args.height).into(),
                 args.mode,
+                MemMode::Mem1bpp,
                 false,
             )?;
         }
@@ -101,21 +102,6 @@ fn main() -> anyhow::Result<()> {
             std::thread::sleep(std::time::Duration::from_millis(args.wait as u64));
         }
         info!("clock: {} done, cost {:?}", n, start.elapsed());
-
-        let mut waveform = dev.read_current_waveform()?;
-        let framecount = waveform.frame_count();
-
-        let mut to_black_actions = waveform.get(15, 0);
-        let mut to_white_actions = waveform.get(0, 15);
-        for i in (framecount - 5) .. framecount {
-            to_black_actions[i] = rabbitink::driver::waveform::Action::Keep;
-            to_white_actions[i] = rabbitink::driver::waveform::Action::Keep;
-        }
-        waveform.set(15, 0, &to_black_actions);
-        waveform.set(0, 15, &to_white_actions);
-        // actions[framecount-1] = 
-        // waveform.set(15, 15, &waveform.get(0, 15));
-        dev.write_waveform(&waveform)?;
     }
 
     Ok(())
