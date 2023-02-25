@@ -1,5 +1,5 @@
 use clap::Parser;
-use rabbitink::driver::it8915::{MonoDriver, DisplayMode};
+use rabbitink::driver::it8915::{IT8915, DisplayMode};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -20,7 +20,7 @@ fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    let mut dev = MonoDriver::open(&args.device)?;
+    let mut dev = IT8915::open(&args.device)?;
 
     if let Some(temp) = args.temperature {
         dev.set_force_temperature(temp)?;

@@ -5,7 +5,7 @@ use clap::Parser;
 
 use rabbitink::app::{App, AppOptions};
 use rabbitink::control::*;
-use rabbitink::driver::it8915::MonoDriver;
+use rabbitink::driver::it8915::IT8915;
 use rabbitink::imgproc::DitheringMethod;
 use rabbitink::source::XcbGrabSource;
 
@@ -31,7 +31,7 @@ fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    let mut dev = MonoDriver::open(&args.device)?;
+    let mut dev = IT8915::open(&args.device)?;
     dev.pmic_control(Some(args.vcom), Some(true))?;
     dev.reset_display()?;
 

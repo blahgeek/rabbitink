@@ -3,7 +3,7 @@ use log::{debug, info};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use super::driver::it8915::{DisplayMode, MonoDriver};
+use super::driver::it8915::{DisplayMode, IT8915};
 use super::image::*;
 use super::imgproc::{MonoImgproc, MonoImgprocOptions};
 use super::source::Source;
@@ -38,7 +38,7 @@ pub struct AppOptions {
 }
 
 pub struct App<S> {
-    driver: MonoDriver,
+    driver: IT8915,
     source: S,
     options: AppOptions,
 
@@ -64,7 +64,7 @@ impl<S> App<S>
 where
     S: Source,
 {
-    pub fn new(driver: MonoDriver, source: S, options: AppOptions) -> App<S> {
+    pub fn new(driver: IT8915, source: S, options: AppOptions) -> App<S> {
         App {
             driver,
             source,

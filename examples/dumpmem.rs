@@ -2,7 +2,7 @@ use std::io::Write;
 
 use clap::Parser;
 use log::info;
-use rabbitink::driver::it8915::MonoDriver;
+use rabbitink::driver::it8915::IT8915;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -26,7 +26,7 @@ fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    let mut dev = MonoDriver::open(&args.device)?;
+    let mut dev = IT8915::open(&args.device)?;
 
     let mut output = std::fs::File::create(args.output)?;
     for addr in (args.start .. (args.start + args.len_kb * 1024)).step_by(1024) {

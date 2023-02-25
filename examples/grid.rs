@@ -2,7 +2,7 @@ use clap::Parser;
 use log::info;
 use opencv as cv;
 use opencv::prelude::*;
-use rabbitink::driver::it8915::{DisplayMode, MonoDriver};
+use rabbitink::driver::it8915::{DisplayMode, IT8915};
 use rabbitink::image::cv_adapter;
 
 #[derive(Parser, Debug)]
@@ -27,7 +27,7 @@ fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    let mut dev = MonoDriver::open(&args.device)?;
+    let mut dev = IT8915::open(&args.device)?;
     dev.pmic_control(Some(args.vcom), Some(true))?;
     dev.reset_display()?;
 

@@ -88,7 +88,7 @@ struct DisplayAreaArgs {
 }
 
 // always black-white only
-pub struct MonoDriver {
+pub struct IT8915 {
     device: scsi::Device,
     sysinfo: Sysinfo,
     mem_pitch: u32,
@@ -96,7 +96,7 @@ pub struct MonoDriver {
 
 const EXPECT_INQUERY_VENDOR_PRODUCT: &'static str = "Generic Storage RamDisc 1.00";
 
-impl MonoDriver {
+impl IT8915 {
     pub fn get_screen_size(&self) -> Size {
         (
             self.sysinfo.width.val() as i32,
@@ -109,7 +109,7 @@ impl MonoDriver {
         self.mem_pitch as i32
     }
 
-    pub fn open(desc: &str) -> anyhow::Result<MonoDriver> {
+    pub fn open(desc: &str) -> anyhow::Result<IT8915> {
         let mut device = scsi::Device::open(desc)?;
 
         // inquery, check vendor
@@ -139,7 +139,7 @@ impl MonoDriver {
             .context("failed to read sysinfo")?;
         trace!("Sysinfo: {:?}", sysinfo);
 
-        let mut res = MonoDriver {
+        let mut res = IT8915 {
             device,
             sysinfo,
             mem_pitch: ((sysinfo.width.val() + 31) / 32) * 4, // 4byte align
@@ -368,7 +368,7 @@ impl MonoDriver {
 
     pub fn read_current_waveform(&mut self) -> anyhow::Result<Waveform> {
         const WAVEFORM_MAXLEN: usize = 256 * 64;
-        let buf = self.read_mem::<WAVEFORM_MAXLEN>(MonoDriver::WAVEFORM_DATA_ADDR)?;
+        let buf = self.read_mem::<WAVEFORM_MAXLEN>(IT8915::WAVEFORM_DATA_ADDR)?;
         let waveform = Waveform::new(&buf)?;
 
         // TODO: this does not seem stable
@@ -387,6 +387,6 @@ impl MonoDriver {
     }
 
     pub fn write_waveform(&mut self, waveform: &Waveform) -> anyhow::Result<()> {
-        self.write_mem(MonoDriver::WAVEFORM_DATA_ADDR, waveform.data())
+        self.write_mem(IT8915::WAVEFORM_DATA_ADDR, waveform.data())
     }
 }
