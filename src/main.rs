@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use clap::Parser;
 
-use rabbitink::control::{ControlOptions, Controller};
+use rabbitink::app::{AppOptions, App};
 use rabbitink::driver::it8915::MonoDriver;
 use rabbitink::source::XcbGrabSource;
 
@@ -49,13 +49,13 @@ fn main() -> anyhow::Result<()> {
         signal_hook::flag::register(s, terminate_flag.clone())?;
     }
 
-    let mut controller = Controller::new(
+    let mut app = App::new(
         dev,
         source,
-        ControlOptions {
+        AppOptions {
             full_refresh_flag,
             terminate_flag,
         },
     );
-    controller.run_loop()
+    app.run()
 }

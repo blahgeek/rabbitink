@@ -30,15 +30,15 @@ fn compute_modified_row_range(m_a: &impl ConstImage<1>, m_b: &impl ConstImage<1>
     RowSet::from_iter(modified_rows)
 }
 
-pub struct ControlOptions {
+pub struct AppOptions {
     pub full_refresh_flag: Arc<AtomicBool>,
     pub terminate_flag: Arc<AtomicBool>,
 }
 
-pub struct Controller<S> {
+pub struct App<S> {
     driver: MonoDriver,
     source: S,
-    options: ControlOptions,
+    options: AppOptions,
 
     imgproc: Option<MonoImgproc>, // initialize on first frame, for correct pitch
 
@@ -58,12 +58,12 @@ const TEXT_ROW_TYPICAL_HEIGHT: i32 = 40; // when considering "row ratio" below, 
                                          // so that the "row ratio" is more close to what we assume
 const DU_REFRESH_ROW_RATIO_THRESHOLD: f32 = 0.5; // do a DU (instead of A2) refresh if more than this ratio of rows are changed
 
-impl<S> Controller<S>
+impl<S> App<S>
 where
     S: Source,
 {
-    pub fn new(driver: MonoDriver, source: S, options: ControlOptions) -> Controller<S> {
-        Controller {
+    pub fn new(driver: MonoDriver, source: S, options: AppOptions) -> App<S> {
+        App {
             driver,
             source,
             options,
@@ -207,7 +207,7 @@ where
         Ok(())
     }
 
-    pub fn run_loop(&mut self) -> anyhow::Result<()> {
+    pub fn run(&mut self) -> anyhow::Result<()> {
         let mut t_last_update = std::time::Instant::now();
         while !self.options.terminate_flag.swap(false, Ordering::Relaxed) {
             self.load_frame()?;
