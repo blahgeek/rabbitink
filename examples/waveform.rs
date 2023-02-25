@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use clap::Parser;
 use rabbitink::driver::it8915::{MonoDriver, DisplayMode};
 
@@ -22,8 +20,7 @@ fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    let dev_path = PathBuf::from(&args.device);
-    let mut dev = MonoDriver::open(&dev_path)?;
+    let mut dev = MonoDriver::open(&args.device)?;
 
     if let Some(temp) = args.temperature {
         dev.set_force_temperature(temp)?;

@@ -363,12 +363,12 @@ impl MonoDriver {
         Ok(())
     }
 
-    pub fn read_current_waveform(&mut self) -> anyhow::Result<Waveform> {
-        // TODO: this does not seem stable. only valid for 6inch model
-        let data_addr: u32 = 0x9c3e8;
-        const MAXLEN: usize = 256 * 64;
+    // TODO: this does not seem stable. only valid for 6inch model
+    const WAVEFORM_DATA_ADDR: u32 = 0x9c3e8;
 
-        let buf = self.read_mem::<MAXLEN>(data_addr)?;
+    pub fn read_current_waveform(&mut self) -> anyhow::Result<Waveform> {
+        const WAVEFORM_MAXLEN: usize = 256 * 64;
+        let buf = self.read_mem::<WAVEFORM_MAXLEN>(MonoDriver::WAVEFORM_DATA_ADDR)?;
         let waveform = Waveform::new(&buf)?;
 
         // TODO: this does not seem stable
@@ -384,5 +384,9 @@ impl MonoDriver {
         //     );
         // }
         Ok(waveform)
+    }
+
+    pub fn write_waveform(&mut self, waveform: &Waveform) -> anyhow::Result<()> {
+        self.write_mem(MonoDriver::WAVEFORM_DATA_ADDR, waveform.data())
     }
 }
