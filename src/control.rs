@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use super::driver::it8915::{DisplayMode, MonoDriver};
 use super::image::*;
-use super::imgproc::{Imgproc, ImgprocOptions, DitheringMethod};
+use super::imgproc::{DitheringMethod, Imgproc, ImgprocOptions};
 use super::source::Source;
 
 type RowSet = std::collections::BTreeSet<i32>;
@@ -53,7 +53,9 @@ const DRIVER_POLL_READY_INTERVAL: std::time::Duration = std::time::Duration::fro
 const SOURCE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
 
 const FULL_REFRESH_IDLE_DELAY: std::time::Duration = std::time::Duration::from_secs(120);
-const DU_REFRESH_ROW_RATIO_THRESHOLD: f32 = 0.4; // do a DU (instead of A2) refresh if more than this ratio of rows are changed
+const TEXT_ROW_TYPICAL_HEIGHT: i32 = 40; // when considering "row ratio" below, "expand" each pixel row to this height,
+                                         // so that the "row ratio" is more close to what we assume
+const DU_REFRESH_ROW_RATIO_THRESHOLD: f32 = 0.5; // do a DU (instead of A2) refresh if more than this ratio of rows are changed
 
 impl<S> Controller<S>
 where
@@ -160,10 +162,17 @@ where
         return Ok(true);
     }
 
-    fn do_display_nonblock(&mut self) -> anyhow::Result<()> {
+    fn do_display_nonblock(&mut self) -> anyhow::Result<DisplayMode> {
         assert!(!self.dirty_rows.is_empty());
         let screen_size = self.driver.get_screen_size();
-        let mode = if (self.dirty_rows.len() as i32)
+        let num_dirty_rows_expanded = self
+            .dirty_rows
+            .iter()
+            .map(|x| *x / TEXT_ROW_TYPICAL_HEIGHT)
+            .collect::<std::collections::BTreeSet<i32>>()
+            .len() as i32
+            * TEXT_ROW_TYPICAL_HEIGHT;
+        let mode = if num_dirty_rows_expanded
             < (screen_size.height as f32 * DU_REFRESH_ROW_RATIO_THRESHOLD) as i32
         {
             DisplayMode::A2
@@ -181,7 +190,7 @@ where
         self.displaying_rows.extend(dirty_start..dirty_end);
         self.dirty_rows.clear();
         self.full_refreshed = false;
-        Ok(())
+        Ok(mode)
     }
 
     fn do_display_full_refresh_block(&mut self) -> anyhow::Result<()> {
@@ -214,6 +223,7 @@ where
                 info!("Full refresh!");
                 self.poll_display_ready(/* block */ true)?;
                 self.do_display_full_refresh_block()?;
+                t_last_update = std::time::Instant::now();
                 continue;
             }
 
@@ -229,12 +239,13 @@ where
                 continue;
             }
 
-            self.do_display_nonblock()?;
+            let displayed_mode = self.do_display_nonblock()?;
 
             let t_update = std::time::Instant::now();
-            debug!(
-                "New frame displayed, interval: {:?}",
-                t_update - t_last_update
+            info!(
+                "New frame displayed, interval: {:?}, mode: {:?}",
+                t_update - t_last_update,
+                displayed_mode
             );
             t_last_update = t_update;
         }
