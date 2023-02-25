@@ -1,11 +1,11 @@
 use log::debug;
 use wgpu::util::DeviceExt;
 
-use super::{ImgprocOptions, DitheringMethod};
+use super::{MonoImgprocOptions, DitheringMethod};
 use crate::image::*;
 
-pub struct GpuImgproc {
-    opts: ImgprocOptions,
+pub struct GpuMonoImgproc {
+    opts: MonoImgprocOptions,
 
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -33,8 +33,8 @@ const BAYERS2_THRESHOLDS: [u32; 16] = [
 
 const NO_DITHERING_THRESHOLDS: [u32; 16] = [128; 16];
 
-impl GpuImgproc {
-    pub async fn new(opts: ImgprocOptions) -> GpuImgproc {
+impl GpuMonoImgproc {
+    pub async fn new(opts: MonoImgprocOptions) -> Self {
         assert!(
             opts.bgra_pitch % 4 == 0 && opts.bw_pitch % 4 == 0,
             "gpu imgproc requires 4byte aligned"
@@ -142,7 +142,7 @@ impl GpuImgproc {
             ],
         });
 
-        GpuImgproc {
+        Self {
             opts,
             device,
             queue,
@@ -271,7 +271,7 @@ mod tests {
         let mut bw_img_data: Vec<u8> = vec![0; 4];
         let mut bw_img = ImageView::<1>::new(bw_img_data.as_mut_slice(), 32, 1, None);
 
-        let imgproc = GpuImgproc::new(ImgprocOptions {
+        let imgproc = GpuMonoImgproc::new(MonoImgprocOptions {
             image_size: color_img.size(),
             bgra_pitch: color_img.pitch(),
             bw_pitch: bw_img.pitch(),

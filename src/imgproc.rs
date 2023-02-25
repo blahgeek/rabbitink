@@ -10,11 +10,11 @@ pub enum DitheringMethod {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ImgprocOptions {
+pub struct MonoImgprocOptions {
     pub image_size: Size,
     pub bgra_pitch: i32,
     pub bw_pitch: i32,
     pub dithering_method: DitheringMethod,
 }
 
-pub use gpu::GpuImgproc as Imgproc;
+pub use gpu::GpuMonoImgproc as MonoImgproc;

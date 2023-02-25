@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use super::driver::it8915::{DisplayMode, MonoDriver};
 use super::image::*;
-use super::imgproc::{DitheringMethod, Imgproc, ImgprocOptions};
+use super::imgproc::{DitheringMethod, MonoImgproc, MonoImgprocOptions};
 use super::source::Source;
 
 type RowSet = std::collections::BTreeSet<i32>;
@@ -40,7 +40,7 @@ pub struct Controller<S> {
     source: S,
     options: ControlOptions,
 
-    imgproc: Option<Imgproc>, // initialize on first frame, for correct pitch
+    imgproc: Option<MonoImgproc>, // initialize on first frame, for correct pitch
 
     loaded_frame: Option<ImageBuffer<1>>,
 
@@ -97,7 +97,7 @@ where
             Some(self.driver.get_mem_pitch()),
         );
         if self.imgproc.is_none() {
-            self.imgproc = Some(pollster::block_on(Imgproc::new(ImgprocOptions {
+            self.imgproc = Some(pollster::block_on(MonoImgproc::new(MonoImgprocOptions {
                 image_size: screen_size,
                 bgra_pitch: bgra_img.pitch(),
                 bw_pitch: self.driver.get_mem_pitch(),
