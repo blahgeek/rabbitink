@@ -19,13 +19,13 @@ var<storage, read> bgra_img: array<u32>;
 var<storage, read_write> bw_img: array<u32>;
 
 @group(0) @binding(3)
-var<storage, read> BAYERS4: array<u32>;
+var<storage, read> thresholds4x4: array<u32>;
 
 
 fn rgb_to_gray_with_dithering(rgb: vec3<u32>, x: u32, y: u32) -> u32 {
   let gray = 0.3 * f32(rgb.x) + 0.59 * f32(rgb.y) + 0.11 * f32(rgb.z); // Luminosity Method
   // let gray = (rgb.x + rgb.y + rgb.z) / 3u;
-  let threshold = BAYERS4[(y % 4u) * 4u + (x % 4u)];
+  let threshold = thresholds4x4[(y % 4u) * 4u + (x % 4u)];
   if (u32(gray) <= threshold) {
     return 0u;
   } else {

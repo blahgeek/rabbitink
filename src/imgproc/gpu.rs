@@ -1,8 +1,8 @@
 use log::debug;
 use wgpu::util::DeviceExt;
 
+use super::{ImgprocOptions, DitheringMethod};
 use crate::image::*;
-use super::ImgprocOptions;
 
 pub struct GpuImgproc {
     opts: ImgprocOptions,
@@ -20,9 +20,18 @@ pub struct GpuImgproc {
 
 const WORKGROUP_SIZE: (i32, i32) = (64, 1);
 
-const BAYERS4: [u32; 16] = [
+const BAYERS4_THRESHOLDS: [u32; 16] = [
     0, 128, 32, 160, 192, 64, 224, 96, 48, 176, 16, 144, 240, 112, 208, 80,
 ];
+
+const BAYERS2_THRESHOLDS: [u32; 16] = [
+    0, 128,  0, 128,
+    192, 64, 192, 64,
+    0, 128,  0, 128,
+    192, 64, 192, 64,
+];
+
+const NO_DITHERING_THRESHOLDS: [u32; 16] = [128; 16];
 
 impl GpuImgproc {
     pub async fn new(opts: ImgprocOptions) -> GpuImgproc {
@@ -85,7 +94,16 @@ impl GpuImgproc {
         });
         let bayers4_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("bayers4"),
-            contents: unsafe { std::slice::from_raw_parts(BAYERS4.as_ptr() as *const u8, 16 * 4) },
+            contents: unsafe {
+                std::slice::from_raw_parts(
+                    match opts.dithering_method {
+                        DitheringMethod::Bayers2 => BAYERS2_THRESHOLDS.as_ptr(),
+                        DitheringMethod::Bayers4 => BAYERS4_THRESHOLDS.as_ptr(),
+                        DitheringMethod::NoDithering => NO_DITHERING_THRESHOLDS.as_ptr(),
+                    } as *const u8,
+                    16 * 4,
+                )
+            },
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
 

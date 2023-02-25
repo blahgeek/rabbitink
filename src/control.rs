@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use super::driver::it8915::{DisplayMode, MonoDriver};
 use super::image::*;
-use super::imgproc::{Imgproc, ImgprocOptions};
+use super::imgproc::{Imgproc, ImgprocOptions, DitheringMethod};
 use super::source::Source;
 
 type RowSet = std::collections::BTreeSet<i32>;
@@ -98,6 +98,7 @@ where
                 image_size: screen_size,
                 bgra_pitch: bgra_img.pitch(),
                 bw_pitch: self.driver.get_mem_pitch(),
+                dithering_method: DitheringMethod::Bayers4,
             })));
         }
         self.imgproc
