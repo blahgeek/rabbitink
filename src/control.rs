@@ -53,6 +53,7 @@ const DRIVER_POLL_READY_INTERVAL: std::time::Duration = std::time::Duration::fro
 const SOURCE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
 
 const FULL_REFRESH_IDLE_DELAY: std::time::Duration = std::time::Duration::from_secs(120);
+const FULL_REFRESH_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3); // prevent duplicated full refresh request within this period, if nothing is changed
 const TEXT_ROW_TYPICAL_HEIGHT: i32 = 40; // when considering "row ratio" below, "expand" each pixel row to this height,
                                          // so that the "row ratio" is more close to what we assume
 const DU_REFRESH_ROW_RATIO_THRESHOLD: f32 = 0.5; // do a DU (instead of A2) refresh if more than this ratio of rows are changed
@@ -212,10 +213,12 @@ where
             self.load_frame()?;
             let need_display = !self.dirty_rows.is_empty();
 
-            let full_refresh = self
+            let full_refresh_requested = self
                 .options
                 .full_refresh_flag
-                .swap(false, Ordering::Relaxed)
+                .swap(false, Ordering::Relaxed);
+            let full_refresh = (full_refresh_requested
+                && (!self.full_refreshed || t_last_update.elapsed() > FULL_REFRESH_MIN_INTERVAL))
                 || (!need_display
                     && t_last_update.elapsed() > FULL_REFRESH_IDLE_DELAY
                     && !self.full_refreshed);
