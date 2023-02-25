@@ -1,18 +1,21 @@
 use log::{debug, info};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::imgproc::dithering;
 
-use super::driver::it8915::{DisplayMode, IT8915, MemMode};
+use super::driver::it8915::{DisplayMode, MemMode, IT8915};
 use super::image::*;
 use super::imgproc::{MonoImgproc, MonoImgprocOptions};
+use super::run_mode::RunMode;
 use super::source::Source;
-use super::control::RunMode;
 
 type RowSet = std::collections::BTreeSet<i32>;
 
-fn compute_modified_row_range<const BPP: i32>(m_a: &impl ConstImage<BPP>, m_b: &impl ConstImage<BPP>) -> RowSet {
+fn compute_modified_row_range<const BPP: i32>(
+    m_a: &impl ConstImage<BPP>,
+    m_b: &impl ConstImage<BPP>,
+) -> RowSet {
     assert_eq!(m_a.size(), m_b.size());
     assert_eq!(m_a.pitch(), m_b.pitch());
 
@@ -33,17 +36,15 @@ fn compute_modified_row_range<const BPP: i32>(m_a: &impl ConstImage<BPP>, m_b: &
 }
 
 pub struct AppOptions {
-    pub full_refresh_flag: Arc<AtomicBool>,
+    pub reload_flag: Arc<AtomicBool>,
     pub terminate_flag: Arc<AtomicBool>,
-    pub run_mode: Arc<Mutex<RunMode>>,
+    pub run_mode_config_path: std::path::PathBuf,
 }
 
 pub struct App<S> {
     driver: IT8915,
     source: S,
     options: AppOptions,
-
-    // get from options.run_mode at start of each iteration
     current_run_mode: RunMode,
 
     mono_imgproc: Option<MonoImgproc>, // initialize on first frame, for correct pitch
@@ -69,7 +70,8 @@ where
     S: Source,
 {
     pub fn new(driver: IT8915, source: S, options: AppOptions) -> App<S> {
-        let current_run_mode = *options.run_mode.lock().unwrap();
+        let current_run_mode =
+            RunMode::read_from_file(&options.run_mode_config_path).unwrap_or_default();
         App {
             driver,
             source,
@@ -238,14 +240,18 @@ where
     pub fn run(&mut self) -> anyhow::Result<()> {
         let mut t_last_update = std::time::Instant::now();
         while !self.options.terminate_flag.swap(false, Ordering::Relaxed) {
-            let new_run_mode = *self.options.run_mode.lock().unwrap();
-            if new_run_mode != self.current_run_mode {
-                info!("Switching to new run mode: {:?}", new_run_mode);
-                self.poll_display_ready(/* block */ true)?;
-                self.driver.reset_display()?;
-                self.mono_loaded_frame = None;
-                self.gray_loaded_frame = None;
-                self.current_run_mode = new_run_mode;
+            let reload_requested = self.options.reload_flag.swap(false, Ordering::Relaxed);
+            if reload_requested {
+                let new_run_mode =
+                    RunMode::read_from_file(&self.options.run_mode_config_path).unwrap_or_default();
+                if new_run_mode != self.current_run_mode {
+                    info!("Switching to new run mode: {:?}", new_run_mode);
+                    self.poll_display_ready(/* block */ true)?;
+                    self.driver.reset_display()?;
+                    self.mono_loaded_frame = None;
+                    self.gray_loaded_frame = None;
+                    self.current_run_mode = new_run_mode;
+                }
             }
 
             match self.current_run_mode {
@@ -254,11 +260,7 @@ where
             }
             let need_display = !self.dirty_rows.is_empty();
 
-            let full_refresh_requested = self
-                .options
-                .full_refresh_flag
-                .swap(false, Ordering::Relaxed);
-            let full_refresh = (full_refresh_requested
+            let full_refresh = (reload_requested
                 && (!self.full_refreshed || t_last_update.elapsed() > FULL_REFRESH_MIN_INTERVAL))
                 || (!need_display
                     && t_last_update.elapsed() > FULL_REFRESH_IDLE_DELAY

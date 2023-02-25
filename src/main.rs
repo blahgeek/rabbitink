@@ -1,12 +1,10 @@
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use clap::Parser;
 
 use rabbitink::app::{App, AppOptions};
-use rabbitink::control::*;
 use rabbitink::driver::it8915::IT8915;
-use rabbitink::imgproc::DitheringMethod;
 use rabbitink::source::XcbGrabSource;
 
 #[derive(Parser, Debug)]
@@ -22,6 +20,9 @@ struct Args {
 
     #[arg(long)]
     vcom: u16,
+
+    #[arg(long, default_value = "/tmp/rabbitink_run_mode.config")]
+    run_mode_config: std::path::PathBuf,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -43,32 +44,21 @@ fn main() -> anyhow::Result<()> {
         )),
     )?;
 
-    let full_refresh_flag = Arc::new(AtomicBool::default());
-    signal_hook::flag::register(signal_hook::consts::SIGUSR1, full_refresh_flag.clone())?;
+    let reload_flag = Arc::new(AtomicBool::default());
+    signal_hook::flag::register(signal_hook::consts::SIGUSR1, reload_flag.clone())?;
 
     let terminate_flag = Arc::new(AtomicBool::default());
     for s in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
         signal_hook::flag::register(s, terminate_flag.clone())?;
     }
 
-    let run_mode = Arc::new(Mutex::new(RunMode::Mono(DitheringMethod::Bayers4)));
-    {
-        let run_mode = run_mode.clone();
-        std::thread::spawn(move || {
-            run_socket_control_server(
-                std::path::Path::new("/tmp/rabbitink.sock"),
-                run_mode.clone(),
-            ).unwrap();
-        });
-    }
-
     let mut app = App::new(
         dev,
         source,
         AppOptions {
-            full_refresh_flag,
+            reload_flag,
             terminate_flag,
-            run_mode,
+            run_mode_config_path: args.run_mode_config,
         },
     );
     app.run()
