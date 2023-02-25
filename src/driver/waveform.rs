@@ -4,7 +4,7 @@ pub struct Waveform {
     data: Vec<[u8; 64]>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum Action {
     Keep,
     Down,
@@ -16,8 +16,12 @@ impl Debug for Waveform {
         write!(f, "Total {} frames:\n", self.data.len())?;
         for src in 0..16 {
             for dst in 0..16 {
+                let actions = self.get(src, dst);
+                if actions.iter().all(|x| *x == Action::Keep) {
+                    continue
+                }
                 write!(f, "{:02} -> {:02}: ", src, dst)?;
-                for action in self.get(src, dst) {
+                for action in actions {
                     match action {
                         Action::Keep => write!(f, "-")?,
                         Action::Down => write!(f, "v")?,
