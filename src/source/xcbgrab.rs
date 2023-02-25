@@ -74,7 +74,8 @@ impl XcbGrabSource {
         let screen = setup.roots().nth(screen_num as usize).unwrap();
         let window = screen.root();
 
-        let xfixes_query_cookie = conn.send_request(&xcb::xfixes::QueryVersion {
+        // don't know why, this is required to make cursor work
+        let _xfixes_query_cookie = conn.send_request(&xcb::xfixes::QueryVersion {
             client_major_version: xcb::xfixes::MAJOR_VERSION,
             client_minor_version: xcb::xfixes::MINOR_VERSION,
         });
