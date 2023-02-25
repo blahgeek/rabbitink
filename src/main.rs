@@ -1,10 +1,12 @@
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use clap::Parser;
 
-use rabbitink::app::{AppOptions, App};
+use rabbitink::app::{App, AppOptions};
+use rabbitink::control::*;
 use rabbitink::driver::it8915::MonoDriver;
+use rabbitink::imgproc::DitheringMethod;
 use rabbitink::source::XcbGrabSource;
 
 #[derive(Parser, Debug)]
@@ -49,12 +51,24 @@ fn main() -> anyhow::Result<()> {
         signal_hook::flag::register(s, terminate_flag.clone())?;
     }
 
+    let run_mode = Arc::new(Mutex::new(RunMode::Mono(DitheringMethod::Bayers4)));
+    {
+        let run_mode = run_mode.clone();
+        std::thread::spawn(move || {
+            run_socket_control_server(
+                std::path::Path::new("/tmp/rabbitink.sock"),
+                run_mode.clone(),
+            ).unwrap();
+        });
+    }
+
     let mut app = App::new(
         dev,
         source,
         AppOptions {
             full_refresh_flag,
             terminate_flag,
+            run_mode,
         },
     );
     app.run()

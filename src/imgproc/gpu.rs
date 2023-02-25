@@ -1,7 +1,7 @@
 use log::debug;
 use wgpu::util::DeviceExt;
 
-use super::{MonoImgprocOptions, DitheringMethod};
+use super::{DitheringMethod, MonoImgprocOptions};
 use crate::image::*;
 
 pub struct GpuMonoImgproc {
@@ -16,6 +16,9 @@ pub struct GpuMonoImgproc {
     bgra_stage_buffer: wgpu::Buffer,
     bw_buffer: wgpu::Buffer,
     bw_stage_buffer: wgpu::Buffer,
+
+    dithering_threshold_buffer: wgpu::Buffer,
+    current_dithering_method: DitheringMethod,
 }
 
 const WORKGROUP_SIZE: (i32, i32) = (64, 1);
@@ -25,13 +28,14 @@ const BAYERS4_THRESHOLDS: [u32; 16] = [
 ];
 
 const BAYERS2_THRESHOLDS: [u32; 16] = [
-    0, 128,  0, 128,
-    192, 64, 192, 64,
-    0, 128,  0, 128,
-    192, 64, 192, 64,
+    0, 128, 0, 128, 192, 64, 192, 64, 0, 128, 0, 128, 192, 64, 192, 64,
 ];
 
 const NO_DITHERING_THRESHOLDS: [u32; 16] = [128; 16];
+
+fn dithering_thresholds_buf(v: &[u32; 16]) -> &[u8] {
+    unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, 16 * 4) }
+}
 
 impl GpuMonoImgproc {
     pub async fn new(opts: MonoImgprocOptions) -> Self {
@@ -92,20 +96,12 @@ impl GpuMonoImgproc {
             contents: unsafe { std::slice::from_raw_parts(params_data.as_ptr() as *const u8, 16) },
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let bayers4_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("bayers4"),
-            contents: unsafe {
-                std::slice::from_raw_parts(
-                    match opts.dithering_method {
-                        DitheringMethod::Bayers2 => BAYERS2_THRESHOLDS.as_ptr(),
-                        DitheringMethod::Bayers4 => BAYERS4_THRESHOLDS.as_ptr(),
-                        DitheringMethod::NoDithering => NO_DITHERING_THRESHOLDS.as_ptr(),
-                    } as *const u8,
-                    16 * 4,
-                )
-            },
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        });
+        let dithering_threshold_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("bayers4"),
+                contents: dithering_thresholds_buf(&BAYERS4_THRESHOLDS),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            });
 
         let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
@@ -137,7 +133,7 @@ impl GpuMonoImgproc {
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: bayers4_buffer.as_entire_binding(),
+                    resource: dithering_threshold_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -152,6 +148,8 @@ impl GpuMonoImgproc {
             bgra_stage_buffer,
             bw_buffer,
             bw_stage_buffer,
+            dithering_threshold_buffer,
+            current_dithering_method: DitheringMethod::Bayers4,
         }
     }
 
@@ -195,10 +193,28 @@ impl GpuMonoImgproc {
         self.bw_stage_buffer.unmap();
     }
 
-    pub fn process(&self, input_bgra_img: &impl ConstImage<32>, output_bw_img: &mut impl Image<1>) {
+    pub fn process(
+        &mut self,
+        input_bgra_img: &impl ConstImage<32>,
+        output_bw_img: &mut impl Image<1>,
+        dithering_method: DitheringMethod,
+    ) {
         let t_start = std::time::Instant::now();
 
         self.write_input(input_bgra_img);
+        if dithering_method != self.current_dithering_method {
+            self.queue.write_buffer(
+                &self.dithering_threshold_buffer,
+                0,
+                dithering_thresholds_buf(match dithering_method {
+                    DitheringMethod::Bayers2 => &BAYERS2_THRESHOLDS,
+                    DitheringMethod::Bayers4 => &BAYERS4_THRESHOLDS,
+                    DitheringMethod::NoDithering => &NO_DITHERING_THRESHOLDS,
+                }),
+            );
+            self.current_dithering_method = dithering_method;
+        }
+
         let t_uploaded = std::time::Instant::now();
 
         let mut encoder = self
@@ -277,7 +293,7 @@ mod tests {
             bw_pitch: bw_img.pitch(),
         });
         let imgproc = pollster::block_on(imgproc);
-        imgproc.process(&color_img, &mut bw_img);
+        imgproc.process(&color_img, &mut bw_img, DitheringMethod::Bayers4);
 
         drop(bw_img);
 

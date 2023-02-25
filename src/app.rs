@@ -1,12 +1,13 @@
 use anyhow::bail;
 use log::{debug, info};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use super::driver::it8915::{DisplayMode, MonoDriver};
 use super::image::*;
-use super::imgproc::{DitheringMethod, MonoImgproc, MonoImgprocOptions};
+use super::imgproc::{MonoImgproc, MonoImgprocOptions};
 use super::source::Source;
+use super::control::RunMode;
 
 type RowSet = std::collections::BTreeSet<i32>;
 
@@ -33,6 +34,7 @@ fn compute_modified_row_range(m_a: &impl ConstImage<1>, m_b: &impl ConstImage<1>
 pub struct AppOptions {
     pub full_refresh_flag: Arc<AtomicBool>,
     pub terminate_flag: Arc<AtomicBool>,
+    pub run_mode: Arc<Mutex<RunMode>>,
 }
 
 pub struct App<S> {
@@ -101,13 +103,15 @@ where
                 image_size: screen_size,
                 bgra_pitch: bgra_img.pitch(),
                 bw_pitch: self.driver.get_mem_pitch(),
-                dithering_method: DitheringMethod::Bayers4,
             })));
         }
+        let dithering_method = match *self.options.run_mode.lock().unwrap() {
+            RunMode::Mono(v) => v,
+        };
         self.imgproc
-            .as_ref()
+            .as_mut()
             .unwrap()
-            .process(&bgra_img, &mut new_frame);
+            .process(&bgra_img, &mut new_frame, dithering_method);
         let t_imgproc = std::time::Instant::now();
 
         let mut modified_range = match &self.loaded_frame {
