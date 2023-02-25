@@ -1,4 +1,5 @@
 pub mod gpu;
+pub mod dithering;
 
 use crate::image::Size;
 

@@ -7,11 +7,35 @@ use std::sync::Arc;
 use log::warn;
 
 use super::imgproc::DitheringMethod;
+use super::driver::it8915::{DisplayMode, MemMode};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RunMode {
     Mono(DitheringMethod),
+    Gray,
 }
+
+impl RunMode {
+    pub fn display_mode_fast(&self) -> DisplayMode {
+        match self {
+            &Self::Mono(_) => DisplayMode::A2,
+            &Self::Gray => DisplayMode::GL16,
+        }
+    }
+    pub fn display_mode_slow(&self) -> DisplayMode {
+        match self {
+            &Self::Mono(_) => DisplayMode::DU,
+            &Self::Gray => DisplayMode::GL16,
+        }
+    }
+    pub fn mem_mode(&self) -> MemMode {
+        match self {
+            &Self::Mono(_) => MemMode::Mem1bpp,
+            &Self::Gray => MemMode::Mem8bpp,
+        }
+    }
+}
+
 
 const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
@@ -23,6 +47,7 @@ fn handle_client(mut stream: UnixStream, destination: Arc<Mutex<RunMode>>) -> an
         "mono_bayers4" => RunMode::Mono(DitheringMethod::Bayers4),
         "mono_bayers2" => RunMode::Mono(DitheringMethod::Bayers2),
         "mono_naive" => RunMode::Mono(DitheringMethod::NoDithering),
+        "gray" => RunMode::Gray,
         _ => anyhow::bail!("Unsupported request: {}", content),
     };
     let mut dest = destination.lock().unwrap();
