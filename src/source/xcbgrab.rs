@@ -74,11 +74,6 @@ impl XcbGrabSource {
         let screen = setup.roots().nth(screen_num as usize).unwrap();
         let window = screen.root();
 
-        let xfixes_query_cookie = conn.send_request(&xcb::xfixes::QueryVersion {
-            client_major_version: xcb::xfixes::MAJOR_VERSION,
-            client_minor_version: xcb::xfixes::MINOR_VERSION,
-        });
-
         let geo_cookie = conn.send_request(&xcb::x::GetGeometry {
             drawable: xcb::x::Drawable::Window(window),
         });
