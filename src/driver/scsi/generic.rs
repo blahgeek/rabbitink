@@ -40,25 +40,39 @@ const ENDPOINT_IN: u8 = 0x81;
 
 const DEFAULT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
+const VENDOR_ID: u16 = 0x048d;
+const PRODUCT_ID: u16 = 0x8951;
+
 impl GenericDeviceIO {
+    fn new_with_rusb_device_handle(mut dev: rusb::DeviceHandle<rusb::GlobalContext>) -> anyhow::Result<Self> {
+        dev.reset()?;
+        dev.set_auto_detach_kernel_driver(true)?;
+        dev.claim_interface(0)?;
+        Ok(GenericDeviceIO { dev, next_tag: 0 })
+    }
+
+    pub fn new_auto_select() -> anyhow::Result<GenericDeviceIO> {
+        if let Some(dev) = rusb::open_device_with_vid_pid(VENDOR_ID, PRODUCT_ID) {
+            Self::new_with_rusb_device_handle(dev)
+        } else {
+            anyhow::bail!("Cannot find usb device with matching vendor/product id")
+        }
+    }
+
     pub fn new(bus: u8, addr: u8) -> anyhow::Result<GenericDeviceIO> {
         let dev = rusb::devices()?
             .iter()
             .filter(|dev| {
                 let desc = dev.device_descriptor().unwrap();
-                desc.vendor_id() == 0x048d
-                    && desc.product_id() == 0x8951
+                desc.vendor_id() == VENDOR_ID
+                    && desc.product_id() == PRODUCT_ID
                     && dev.bus_number() == bus
                     && dev.address() == addr
             })
             .next()
             .ok_or(anyhow::format_err!("Cannot find device {},{}", bus, addr))?;
         debug!("Opening USB device {:?}", dev);
-        let mut dev = dev.open()?;
-        dev.reset()?;
-        dev.set_auto_detach_kernel_driver(true)?;
-        dev.claim_interface(0)?;
-        Ok(GenericDeviceIO { dev, next_tag: 0 })
+        Self::new_with_rusb_device_handle(dev.open()?)
     }
 
     fn pack_cbw_and_cdb(&mut self, cmd: &[u8], data_len: usize, direction: u8) -> Vec<u8> {
