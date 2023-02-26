@@ -45,7 +45,9 @@ fn main() -> anyhow::Result<()> {
     )?;
 
     let reload_flag = Arc::new(AtomicBool::default());
-    signal_hook::flag::register(signal_hook::consts::SIGUSR1, reload_flag.clone())?;
+    for s in [signal_hook::consts::SIGUSR1, signal_hook::consts::SIGHUP] {
+        signal_hook::flag::register(s, reload_flag.clone())?;
+    }
 
     let terminate_flag = Arc::new(AtomicBool::default());
     for s in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
