@@ -1,5 +1,5 @@
 use super::DeviceIO;
-use log::debug;
+use log::info;
 use anyhow::Context;
 
 pub struct GenericDeviceIO {
@@ -51,27 +51,19 @@ impl GenericDeviceIO {
         Ok(GenericDeviceIO { dev, next_tag: 0 })
     }
 
-    pub fn new_auto_select() -> anyhow::Result<GenericDeviceIO> {
-        if let Some(dev) = rusb::open_device_with_vid_pid(VENDOR_ID, PRODUCT_ID) {
-            Self::new_with_rusb_device_handle(dev)
-        } else {
-            anyhow::bail!("Cannot find usb device with matching vendor/product id")
-        }
-    }
-
-    pub fn new(bus: u8, addr: u8) -> anyhow::Result<GenericDeviceIO> {
+    pub fn new(bus_and_addr: Option<(u8, u8)>) -> anyhow::Result<GenericDeviceIO> {
         let dev = rusb::devices()?
             .iter()
             .filter(|dev| {
                 let desc = dev.device_descriptor().unwrap();
                 desc.vendor_id() == VENDOR_ID
                     && desc.product_id() == PRODUCT_ID
-                    && dev.bus_number() == bus
-                    && dev.address() == addr
+                    && (bus_and_addr.is_none()
+                        || (dev.bus_number(), dev.address()) == bus_and_addr.unwrap())
             })
             .next()
-            .ok_or(anyhow::format_err!("Cannot find device {},{}", bus, addr))?;
-        debug!("Opening USB device {:?}", dev);
+            .ok_or(anyhow::format_err!("Cannot find target device {:?}", bus_and_addr))?;
+        info!("Opening USB device {:?}", dev);
         Self::new_with_rusb_device_handle(dev.open()?)
     }
 

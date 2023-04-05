@@ -25,11 +25,11 @@ impl Device {
     pub fn open(desc: &str) -> anyhow::Result<Device> {
         let usb_bus_addr_regex = regex::Regex::new(r"([0-9]+),([0-9]+)").unwrap();
         let device_io: Box<dyn DeviceIO> = if desc.is_empty() {
-            Box::new(generic::GenericDeviceIO::new_auto_select()?)
+            Box::new(generic::GenericDeviceIO::new(None)?)
         } else if let Some(capture) = usb_bus_addr_regex.captures(desc) {
             let bus = capture.get(1).unwrap().as_str().parse::<u8>()?;
             let addr = capture.get(2).unwrap().as_str().parse::<u8>()?;
-            Box::new(generic::GenericDeviceIO::new(bus, addr)?)
+            Box::new(generic::GenericDeviceIO::new(Some((bus, addr)))?)
         } else if cfg!(target_os = "linux") {
             Box::new(linux::LinuxDeviceIO::open(std::path::Path::new(desc))?)
         } else {

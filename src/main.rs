@@ -9,8 +9,11 @@ use rabbitink::source::XcbGrabSource;
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[arg(short, long)]
+    #[arg(long, default_value = "")]
     device: String,
+
+    #[arg(long, default_value = ":0.0")]
+    display: String,
 
     #[arg(long, default_value_t = 0)]
     grab_offx: i32,
@@ -37,7 +40,7 @@ fn main() -> anyhow::Result<()> {
     dev.reset_display()?;
 
     let source = XcbGrabSource::new(
-        ":0.0",
+        &args.display,
         Some((
             (args.grab_offx, args.grab_offy).into(),
             dev.get_screen_size(),
