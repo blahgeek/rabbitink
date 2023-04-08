@@ -24,6 +24,12 @@ struct Args {
     #[arg(long)]
     vcom: u16,
 
+    #[arg(long, default_value_t = 1)]
+    driver_poll_ready_interval: u64,
+
+    #[arg(long, default_value_t = 10)]
+    source_poll_interval: u64,
+
     #[arg(long, default_value = "/tmp/rabbitink_run_mode.config")]
     run_mode_config: std::path::PathBuf,
 }
@@ -64,6 +70,12 @@ fn main() -> anyhow::Result<()> {
             reload_flag,
             terminate_flag,
             run_mode_config_path: args.run_mode_config,
+            driver_poll_ready_interval: std::time::Duration::from_millis(
+                args.driver_poll_ready_interval,
+            ),
+            source_poll_interval: std::time::Duration::from_millis(
+                args.source_poll_interval,
+            ),
         },
     );
     app.run()

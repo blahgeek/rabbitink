@@ -39,6 +39,9 @@ pub struct AppOptions {
     pub reload_flag: Arc<AtomicBool>,
     pub terminate_flag: Arc<AtomicBool>,
     pub run_mode_config_path: std::path::PathBuf,
+
+    pub driver_poll_ready_interval: std::time::Duration,
+    pub source_poll_interval: std::time::Duration,
 }
 
 pub struct App<S> {
@@ -55,9 +58,6 @@ pub struct App<S> {
     displaying_rows: RowSet,
     full_refreshed: bool,
 }
-
-const DRIVER_POLL_READY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1);
-const SOURCE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
 
 const FULL_REFRESH_IDLE_DELAY: std::time::Duration = std::time::Duration::from_secs(120);
 const FULL_REFRESH_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3); // prevent duplicated full refresh request within this period, if nothing is changed
@@ -185,7 +185,7 @@ where
             if !block {
                 return Ok(false);
             }
-            std::thread::sleep(DRIVER_POLL_READY_INTERVAL);
+            std::thread::sleep(self.options.driver_poll_ready_interval);
         }
         self.displaying_rows.clear();
         return Ok(true);
@@ -275,7 +275,7 @@ where
 
             if !need_display {
                 // frame not changed
-                std::thread::sleep(SOURCE_POLL_INTERVAL);
+                std::thread::sleep(self.options.source_poll_interval);
                 continue;
             }
 
