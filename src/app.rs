@@ -6,7 +6,7 @@ use crate::imgproc::dithering;
 
 use super::driver::it8915::{DisplayMode, MemMode, IT8915};
 use super::image::*;
-use super::imgproc::{MonoImgproc, MonoImgprocOptions};
+use super::imgproc::{MonoImgproc, MonoImgprocOptions, MonoImgprocTrait};
 use super::run_mode::RunMode;
 use super::source::Source;
 
@@ -102,11 +102,11 @@ where
             Some(self.driver.get_mem_pitch(MemMode::Mem1bpp)),
         );
         if self.mono_imgproc.is_none() {
-            self.mono_imgproc = Some(pollster::block_on(MonoImgproc::new(MonoImgprocOptions {
+            self.mono_imgproc = Some(MonoImgproc::new(MonoImgprocOptions {
                 image_size: screen_size,
                 bgra_pitch: bgra_img.pitch(),
                 bw_pitch: self.driver.get_mem_pitch(MemMode::Mem1bpp),
-            })));
+            }));
         }
         let dithering_method = match self.current_run_mode {
             RunMode::Mono(v) => v,

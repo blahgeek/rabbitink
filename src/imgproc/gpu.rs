@@ -1,7 +1,7 @@
 use log::debug;
 use wgpu::util::DeviceExt;
 
-use super::{DitheringMethod, MonoImgprocOptions};
+use super::{DitheringMethod, MonoImgprocOptions, MonoImgprocTrait};
 use crate::image::*;
 
 pub struct GpuMonoImgproc {
@@ -38,7 +38,7 @@ fn dithering_thresholds_buf(v: &[u32; 16]) -> &[u8] {
 }
 
 impl GpuMonoImgproc {
-    pub async fn new(opts: MonoImgprocOptions) -> Self {
+    pub async fn new_async(opts: MonoImgprocOptions) -> Self {
         assert!(
             opts.bgra_pitch % 4 == 0 && opts.bw_pitch % 4 == 0,
             "gpu imgproc requires 4byte aligned"
@@ -193,7 +193,14 @@ impl GpuMonoImgproc {
         self.bw_stage_buffer.unmap();
     }
 
-    pub fn process(
+}
+
+impl MonoImgprocTrait for GpuMonoImgproc {
+    fn new(options: MonoImgprocOptions) -> Self {
+        pollster::block_on(Self::new_async(options))
+    }
+
+    fn process(
         &mut self,
         input_bgra_img: &impl ConstImage<32>,
         output_bw_img: &mut impl Image<1>,
@@ -292,7 +299,7 @@ mod tests {
             bgra_pitch: color_img.pitch(),
             bw_pitch: bw_img.pitch(),
         });
-        let imgproc = pollster::block_on(imgproc);
+        let mut imgproc = pollster::block_on(imgproc);
         imgproc.process(&color_img, &mut bw_img, DitheringMethod::Bayers4);
 
         drop(bw_img);
