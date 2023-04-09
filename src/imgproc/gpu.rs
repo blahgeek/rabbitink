@@ -294,12 +294,11 @@ mod tests {
         let mut bw_img_data: Vec<u8> = vec![0; 4];
         let mut bw_img = ImageView::<1>::new(bw_img_data.as_mut_slice(), 32, 1, None);
 
-        let imgproc = GpuMonoImgproc::new(MonoImgprocOptions {
+        let mut imgproc = GpuMonoImgproc::new(MonoImgprocOptions {
             image_size: color_img.size(),
             bgra_pitch: color_img.pitch(),
             bw_pitch: bw_img.pitch(),
         });
-        let mut imgproc = pollster::block_on(imgproc);
         imgproc.process(&color_img, &mut bw_img, DitheringMethod::Bayers4);
 
         drop(bw_img);
