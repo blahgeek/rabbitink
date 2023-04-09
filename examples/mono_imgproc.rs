@@ -1,5 +1,5 @@
 use rabbitink::image::*;
-use rabbitink::imgproc::{MonoImgproc, MonoImgprocOptions, DitheringMethod};
+use rabbitink::imgproc::{MonoImgproc, MonoImgprocTrait, MonoImgprocOptions, DitheringMethod};
 
 use image as imagex; // external, for IO
 
@@ -27,15 +27,14 @@ fn main() -> anyhow::Result<()> {
 
     let mut dst_img = ImageBuffer::<1>::new(src_img.width(), src_img.height(), None);
 
-    let imgproc = pollster::block_on(MonoImgproc::new(MonoImgprocOptions {
+    let mut imgproc = MonoImgproc::new(MonoImgprocOptions {
         image_size: src_img.size(),
         bgra_pitch: src_img.pitch(),
         bw_pitch: dst_img.pitch(),
-        dithering_method: DitheringMethod::Bayers4,
-    }));
+    });
 
     for _ in 0..10 {
-        imgproc.process(&src_img, &mut dst_img);
+        imgproc.process(&src_img, &mut dst_img, DitheringMethod::Bayers4);
     }
 
     let mut dst_img_x = imagex::GrayImage::new(dst_img.width() as u32, dst_img.height() as u32);
