@@ -31,6 +31,9 @@ criterion = "0.4.0"
 image = "0.24.5"
 
 [[example]]
+name = "showimg"
+
+[[example]]
 name = "clock"
 required-features = ["opencv"]
 
