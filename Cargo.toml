@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["wgpu"]
+default = []
 
 [build-dependencies]
 bindgen = "0.63.0"
@@ -19,7 +19,7 @@ nix = { version = "0.26.2", features = ["ioctl", "fs"] }
 clap = { version = "4.1.4", features = ["derive"] }
 libc = "0.2.139"
 xcb = { version = "1.2.0", features = ["shm", "xfixes", "shape", "screensaver"] }
-wgpu = { version = "0.15.1", optional = true}
+wgpu = "0.15.1"
 pollster = "0.3.0"
 opencv = { version = "0.75", optional = true, default-features = false, features = ["imgproc", "imgcodecs"]}
 signal-hook = "0.3.15"

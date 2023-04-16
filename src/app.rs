@@ -6,7 +6,7 @@ use crate::imgproc::dithering;
 
 use super::driver::it8915::{DisplayMode, MemMode, IT8915};
 use super::image::*;
-use super::imgproc::{MonoImgproc, MonoImgprocOptions, MonoImgprocTrait};
+use super::imgproc::{MonoImgproc, MonoImgprocOptions};
 use super::run_mode::RunMode;
 use super::source::Source;
 

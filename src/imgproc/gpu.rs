@@ -1,7 +1,7 @@
 use log::debug;
 use wgpu::util::DeviceExt;
 
-use super::{DitheringMethod, MonoImgprocOptions, MonoImgprocTrait};
+use super::{DitheringMethod, MonoImgprocOptions};
 use crate::image::*;
 
 pub struct GpuMonoImgproc {
@@ -193,14 +193,11 @@ impl GpuMonoImgproc {
         self.bw_stage_buffer.unmap();
     }
 
-}
-
-impl MonoImgprocTrait for GpuMonoImgproc {
-    fn new(options: MonoImgprocOptions) -> Self {
+    pub fn new(options: MonoImgprocOptions) -> Self {
         pollster::block_on(Self::new_async(options))
     }
 
-    fn process(
+    pub fn process(
         &mut self,
         input_bgra_img: &impl ConstImage<32>,
         output_bw_img: &mut impl Image<1>,

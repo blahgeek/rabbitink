@@ -1,5 +1,5 @@
 use rabbitink::image::*;
-use rabbitink::imgproc::{MonoImgproc, MonoImgprocTrait, MonoImgprocOptions, DitheringMethod};
+use rabbitink::imgproc::{MonoImgproc, MonoImgprocOptions, DitheringMethod};
 
 use image as imagex; // external, for IO
 
