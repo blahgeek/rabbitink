@@ -1,4 +1,7 @@
 pub mod dithering;
+pub mod rotate;
+
+pub use rotate::Rotation;
 
 use crate::image::Size;
 
@@ -7,23 +10,6 @@ pub enum DitheringMethod {
     NoDithering,
     Bayers2,
     Bayers4,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, clap::ValueEnum)]
-pub enum Rotation {
-    NoRotation,
-    Rotate90,
-    Rotate180,
-    Rotate270,
-}
-
-impl Rotation {
-    pub fn rotated_size(&self, size: Size) -> Size {
-        match self {
-            Rotation::NoRotation | Rotation::Rotate180 => size,
-            Rotation::Rotate90 | Rotation::Rotate270 => (size.height, size.width).into(),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug)]

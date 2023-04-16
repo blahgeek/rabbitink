@@ -6,7 +6,7 @@ use crate::imgproc::dithering;
 
 use super::driver::it8915::{DisplayMode, MemMode, IT8915};
 use super::image::*;
-use super::imgproc::{MonoImgproc, MonoImgprocOptions, Rotation};
+use super::imgproc::{MonoImgproc, MonoImgprocOptions, Rotation, rotate::rotate as rotate_image};
 use super::run_mode::RunMode;
 use super::source::Source;
 
@@ -153,8 +153,9 @@ where
 
     fn load_frame_gray(&mut self) -> anyhow::Result<()> {
         let screen_size = self.driver.get_screen_size();
-        let bgra_img = self.source.get_frame()?;
-        assert_eq!(bgra_img.size(), screen_size);  // TODO: rotation not supported for gray mode yet
+        let bgra_img_orig = self.source.get_frame()?;
+        let bgra_img = rotate_image(bgra_img_orig, self.options.rotation);
+        assert_eq!(bgra_img.size(), screen_size);
         let gray_img = dithering::floyd_steinberg(&bgra_img, dithering::GREY16_TARGET_COLOR_SPACE);
 
         // let mut modified = true;

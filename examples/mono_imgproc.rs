@@ -1,5 +1,5 @@
 use rabbitink::image::*;
-use rabbitink::imgproc::{MonoImgproc, MonoImgprocOptions, DitheringMethod};
+use rabbitink::imgproc::{MonoImgproc, MonoImgprocOptions, DitheringMethod, Rotation};
 
 use image as imagex; // external, for IO
 
@@ -28,9 +28,11 @@ fn main() -> anyhow::Result<()> {
     let mut dst_img = ImageBuffer::<1>::new(src_img.width(), src_img.height(), None);
 
     let mut imgproc = MonoImgproc::new(MonoImgprocOptions {
-        image_size: src_img.size(),
+        input_size: src_img.size(),
         input_pitch: src_img.pitch(),
+        output_size: dst_img.size(),
         output_pitch: dst_img.pitch(),
+        rotation: Rotation::NoRotation,
     });
 
     for _ in 0..10 {
