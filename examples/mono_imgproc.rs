@@ -29,8 +29,8 @@ fn main() -> anyhow::Result<()> {
 
     let mut imgproc = MonoImgproc::new(MonoImgprocOptions {
         image_size: src_img.size(),
-        bgra_pitch: src_img.pitch(),
-        bw_pitch: dst_img.pitch(),
+        input_pitch: src_img.pitch(),
+        output_pitch: dst_img.pitch(),
     });
 
     for _ in 0..10 {

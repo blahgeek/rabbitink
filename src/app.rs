@@ -104,8 +104,8 @@ where
         if self.mono_imgproc.is_none() {
             self.mono_imgproc = Some(MonoImgproc::new(MonoImgprocOptions {
                 image_size: screen_size,
-                bgra_pitch: bgra_img.pitch(),
-                bw_pitch: self.driver.get_mem_pitch(MemMode::Mem1bpp),
+                input_pitch: bgra_img.pitch(),
+                output_pitch: self.driver.get_mem_pitch(MemMode::Mem1bpp),
             }));
         }
         let dithering_method = match self.current_run_mode {

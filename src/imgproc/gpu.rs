@@ -4,7 +4,7 @@ use wgpu::util::DeviceExt;
 use super::{DitheringMethod, MonoImgprocOptions};
 use crate::image::*;
 
-pub struct GpuMonoImgproc {
+pub struct MonoImgproc {
     opts: MonoImgprocOptions,
 
     device: wgpu::Device,
@@ -12,10 +12,10 @@ pub struct GpuMonoImgproc {
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::ComputePipeline,
 
-    bgra_buffer: wgpu::Buffer,
-    bgra_stage_buffer: wgpu::Buffer,
-    bw_buffer: wgpu::Buffer,
-    bw_stage_buffer: wgpu::Buffer,
+    input_buffer: wgpu::Buffer,
+    input_stage_buffer: wgpu::Buffer,
+    output_buffer: wgpu::Buffer,
+    output_stage_buffer: wgpu::Buffer,
 
     dithering_threshold_buffer: wgpu::Buffer,
     current_dithering_method: DitheringMethod,
@@ -37,10 +37,10 @@ fn dithering_thresholds_buf(v: &[u32; 16]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, 16 * 4) }
 }
 
-impl GpuMonoImgproc {
+impl MonoImgproc {
     pub async fn new_async(opts: MonoImgprocOptions) -> Self {
         assert!(
-            opts.bgra_pitch % 4 == 0 && opts.bw_pitch % 4 == 0,
+            opts.input_pitch % 4 == 0 && opts.output_pitch % 4 == 0,
             "gpu imgproc requires 4byte aligned"
         );
 
@@ -57,30 +57,30 @@ impl GpuMonoImgproc {
             .await
             .unwrap();
 
-        let bgra_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        let input_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("bgra"),
-            size: (opts.image_size.height * opts.bgra_pitch) as u64,
+            size: (opts.image_size.height * opts.input_pitch) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let bgra_stage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("bgra_staging"),
-            size: (opts.image_size.height * opts.bgra_pitch) as u64,
+        let input_stage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("input_staging"),
+            size: (opts.image_size.height * opts.input_pitch) as u64,
             usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::MAP_WRITE,
             mapped_at_creation: false,
         });
 
-        let bw_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("bw"),
-            size: (opts.image_size.height * opts.bw_pitch) as u64,
+            size: (opts.image_size.height * opts.output_pitch) as u64,
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_SRC
                 | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let bw_stage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("bw_staging"),
-            size: (opts.image_size.height * opts.bw_pitch) as u64,
+        let output_stage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("output_staging"),
+            size: (opts.image_size.height * opts.output_pitch) as u64,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -88,8 +88,8 @@ impl GpuMonoImgproc {
         let params_data: Vec<i32> = vec![
             opts.image_size.width,
             opts.image_size.height,
-            opts.bgra_pitch,
-            opts.bw_pitch,
+            opts.input_pitch,
+            opts.output_pitch,
         ];
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("params"),
@@ -125,11 +125,11 @@ impl GpuMonoImgproc {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: bgra_buffer.as_entire_binding(),
+                    resource: input_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: bw_buffer.as_entire_binding(),
+                    resource: output_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -144,10 +144,10 @@ impl GpuMonoImgproc {
             queue,
             bind_group,
             pipeline,
-            bgra_buffer,
-            bgra_stage_buffer,
-            bw_buffer,
-            bw_stage_buffer,
+            input_buffer,
+            input_stage_buffer,
+            output_buffer,
+            output_stage_buffer,
             dithering_threshold_buffer,
             current_dithering_method: DitheringMethod::Bayers4,
         }
@@ -163,34 +163,34 @@ impl GpuMonoImgproc {
         receiver.recv().unwrap();
     }
 
-    fn write_input(&self, bgra_img: &impl ConstImage<32>) {
-        let slice = self.bgra_stage_buffer.slice(..);
+    fn write_input(&self, input_img: &impl ConstImage<32>) {
+        let slice = self.input_stage_buffer.slice(..);
         self.map_buffer_sync(&slice, wgpu::MapMode::Write);
         let mut stage_buf = slice.get_mapped_range_mut();
         let mut stage_buf_img = ImageView::<32>::new(
             &mut stage_buf,
             self.opts.image_size.width,
             self.opts.image_size.height,
-            Some(self.opts.bgra_pitch),
+            Some(self.opts.input_pitch),
         );
-        stage_buf_img.copy_from(bgra_img);
+        stage_buf_img.copy_from(input_img);
         drop(stage_buf);
-        self.bgra_stage_buffer.unmap();
+        self.input_stage_buffer.unmap();
     }
 
-    fn read_output(&self, bw_img: &mut impl Image<1>) {
-        let slice = self.bw_stage_buffer.slice(..);
+    fn read_output(&self, output_img: &mut impl Image<1>) {
+        let slice = self.output_stage_buffer.slice(..);
         self.map_buffer_sync(&slice, wgpu::MapMode::Read);
-        let bw_buf = slice.get_mapped_range();
-        let bw_buf_img = ConstImageView::<1>::new(
-            &bw_buf,
+        let output_buf = slice.get_mapped_range();
+        let output_buf_img = ConstImageView::<1>::new(
+            &output_buf,
             self.opts.image_size.width,
             self.opts.image_size.height,
-            Some(self.opts.bw_pitch),
+            Some(self.opts.output_pitch),
         );
-        bw_img.copy_from(&bw_buf_img);
-        drop(bw_buf);
-        self.bw_stage_buffer.unmap();
+        output_img.copy_from(&output_buf_img);
+        drop(output_buf);
+        self.output_stage_buffer.unmap();
     }
 
     pub fn new(options: MonoImgprocOptions) -> Self {
@@ -199,13 +199,13 @@ impl GpuMonoImgproc {
 
     pub fn process(
         &mut self,
-        input_bgra_img: &impl ConstImage<32>,
-        output_bw_img: &mut impl Image<1>,
+        input_img: &impl ConstImage<32>,
+        output_img: &mut impl Image<1>,
         dithering_method: DitheringMethod,
     ) {
         let t_start = std::time::Instant::now();
 
-        self.write_input(input_bgra_img);
+        self.write_input(input_img);
         if dithering_method != self.current_dithering_method {
             self.queue.write_buffer(
                 &self.dithering_threshold_buffer,
@@ -225,16 +225,16 @@ impl GpuMonoImgproc {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         encoder.copy_buffer_to_buffer(
-            &self.bgra_stage_buffer,
+            &self.input_stage_buffer,
             0,
-            &self.bgra_buffer,
+            &self.input_buffer,
             0,
-            self.bgra_buffer.size(),
+            self.input_buffer.size(),
         );
         encoder.clear_buffer(
-            &self.bw_buffer,
+            &self.output_buffer,
             0,
-            wgpu::BufferSize::new(self.bw_buffer.size()),
+            wgpu::BufferSize::new(self.output_buffer.size()),
         );
 
         {
@@ -249,18 +249,18 @@ impl GpuMonoImgproc {
         }
 
         encoder.copy_buffer_to_buffer(
-            &self.bw_buffer,
+            &self.output_buffer,
             0,
-            &self.bw_stage_buffer,
+            &self.output_stage_buffer,
             0,
-            self.bw_buffer.size(),
+            self.output_buffer.size(),
         );
 
         self.queue.submit(Some(encoder.finish()));
         self.device.poll(wgpu::Maintain::Wait);
         let t_computed = std::time::Instant::now();
 
-        self.read_output(output_bw_img);
+        self.read_output(output_img);
         let t_downloaded = std::time::Instant::now();
 
         debug!(
@@ -279,30 +279,30 @@ mod tests {
 
     #[test]
     fn test_basic() {
-        let bgra_img_data = {
+        let input_img_data = {
             let mut v = Vec::<u8>::new();
             for i in 0..(4 * 32) {
                 v.push(if (i / 4) % 2 == 0 { 0xff } else { 0 });
             }
             v
         };
-        let color_img = ConstImageView::<32>::new(bgra_img_data.as_slice(), 32, 1, None);
+        let color_img = ConstImageView::<32>::new(input_img_data.as_slice(), 32, 1, None);
 
-        let mut bw_img_data: Vec<u8> = vec![0; 4];
-        let mut bw_img = ImageView::<1>::new(bw_img_data.as_mut_slice(), 32, 1, None);
+        let mut output_img_data: Vec<u8> = vec![0; 4];
+        let mut output_img = ImageView::<1>::new(output_img_data.as_mut_slice(), 32, 1, None);
 
-        let mut imgproc = GpuMonoImgproc::new(MonoImgprocOptions {
+        let mut imgproc = MonoImgproc::new(MonoImgprocOptions {
             image_size: color_img.size(),
-            bgra_pitch: color_img.pitch(),
-            bw_pitch: bw_img.pitch(),
+            input_pitch: color_img.pitch(),
+            output_pitch: output_img.pitch(),
         });
-        imgproc.process(&color_img, &mut bw_img, DitheringMethod::Bayers4);
+        imgproc.process(&color_img, &mut output_img, DitheringMethod::Bayers4);
 
-        drop(bw_img);
+        drop(output_img);
 
-        assert_eq!(bw_img_data[0], 0b01010101);
-        assert_eq!(bw_img_data[1], 0b01010101);
-        assert_eq!(bw_img_data[2], 0b01010101);
-        assert_eq!(bw_img_data[3], 0b01010101);
+        assert_eq!(output_img_data[0], 0b01010101);
+        assert_eq!(output_img_data[1], 0b01010101);
+        assert_eq!(output_img_data[2], 0b01010101);
+        assert_eq!(output_img_data[3], 0b01010101);
     }
 }
