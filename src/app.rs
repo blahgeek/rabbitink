@@ -6,7 +6,7 @@ use crate::imgproc::dithering;
 
 use super::driver::it8915::{DisplayMode, MemMode, IT8915};
 use super::image::*;
-use super::imgproc::{MonoImgproc, MonoImgprocOptions};
+use super::imgproc::{MonoImgproc, MonoImgprocOptions, Rotation};
 use super::run_mode::RunMode;
 use super::source::Source;
 
@@ -42,6 +42,8 @@ pub struct AppOptions {
 
     pub driver_poll_ready_interval: std::time::Duration,
     pub source_poll_interval: std::time::Duration,
+
+    pub rotation: Rotation,
 }
 
 pub struct App<S> {
@@ -93,7 +95,7 @@ where
         let t_load_start = std::time::Instant::now();
 
         let bgra_img = self.source.get_frame()?;
-        assert_eq!(bgra_img.size(), screen_size);
+        assert_eq!(bgra_img.size(), self.options.rotation.rotated_size(screen_size));
         let t_got_frame = std::time::Instant::now();
 
         let mut new_frame = ImageBuffer::<1>::new(
@@ -103,8 +105,10 @@ where
         );
         if self.mono_imgproc.is_none() {
             self.mono_imgproc = Some(MonoImgproc::new(MonoImgprocOptions {
-                image_size: screen_size,
+                rotation: self.options.rotation,
+                input_size: bgra_img.size(),
                 input_pitch: bgra_img.pitch(),
+                output_size: screen_size,
                 output_pitch: self.driver.get_mem_pitch(MemMode::Mem1bpp),
             }));
         }
@@ -150,7 +154,7 @@ where
     fn load_frame_gray(&mut self) -> anyhow::Result<()> {
         let screen_size = self.driver.get_screen_size();
         let bgra_img = self.source.get_frame()?;
-        assert_eq!(bgra_img.size(), screen_size);
+        assert_eq!(bgra_img.size(), screen_size);  // TODO: rotation not supported for gray mode yet
         let gray_img = dithering::floyd_steinberg(&bgra_img, dithering::GREY16_TARGET_COLOR_SPACE);
 
         // let mut modified = true;

@@ -6,6 +6,7 @@ use clap::Parser;
 use rabbitink::app::{App, AppOptions};
 use rabbitink::driver::it8915::IT8915;
 use rabbitink::source::XcbGrabSource;
+use rabbitink::imgproc::Rotation;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -23,6 +24,9 @@ struct Args {
 
     #[arg(long)]
     vcom: u16,
+
+    #[arg(long, short, default_value = "no-rotation")]
+    rotation: Rotation,
 
     #[arg(long, default_value_t = 1)]
     driver_poll_ready_interval: u64,
@@ -49,7 +53,7 @@ fn main() -> anyhow::Result<()> {
         &args.display,
         Some((
             (args.grab_offx, args.grab_offy).into(),
-            dev.get_screen_size(),
+            args.rotation.rotated_size(dev.get_screen_size()),
         )),
     )?;
 
@@ -76,6 +80,7 @@ fn main() -> anyhow::Result<()> {
             source_poll_interval: std::time::Duration::from_millis(
                 args.source_poll_interval,
             ),
+            rotation: args.rotation,
         },
     );
     app.run()

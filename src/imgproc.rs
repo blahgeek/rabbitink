@@ -9,7 +9,7 @@ pub enum DitheringMethod {
     Bayers4,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, clap::ValueEnum)]
 pub enum Rotation {
     NoRotation,
     Rotate90,
@@ -28,9 +28,11 @@ impl Rotation {
 
 #[derive(Clone, Copy, Debug)]
 pub struct MonoImgprocOptions {
-    pub image_size: Size,
+    pub input_size: Size,
     pub input_pitch: i32,
+    pub output_size: Size,
     pub output_pitch: i32,
+    pub rotation: Rotation,
 }
 
 pub mod gpu;
