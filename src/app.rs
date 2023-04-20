@@ -119,7 +119,7 @@ where
         self.mono_imgproc
             .as_mut()
             .unwrap()
-            .process(&bgra_img, &mut new_frame, dithering_method);
+            .process(bgra_img.as_ref(), &mut new_frame, dithering_method);
         let t_imgproc = std::time::Instant::now();
 
         let mut modified_range = match &self.mono_loaded_frame {
@@ -154,7 +154,7 @@ where
     fn load_frame_gray(&mut self) -> anyhow::Result<()> {
         let screen_size = self.driver.get_screen_size();
         let bgra_img_orig = self.source.get_frame()?;
-        let bgra_img = rotate_image(bgra_img_orig, self.options.rotation);
+        let bgra_img = rotate_image(bgra_img_orig.as_ref(), self.options.rotation);
         assert_eq!(bgra_img.size(), screen_size);
         let gray_img = dithering::floyd_steinberg(&bgra_img, dithering::GREY16_TARGET_COLOR_SPACE);
 

@@ -203,7 +203,7 @@ impl MonoImgproc {
         receiver.recv().unwrap();
     }
 
-    fn write_input(&self, input_img: &impl ConstImage<32>) {
+    fn write_input<T: ConstImage<32> + ?Sized>(&self, input_img: &T) {
         let slice = self.input_stage_buffer.slice(..);
         self.map_buffer_sync(&slice, wgpu::MapMode::Write);
         let mut stage_buf = slice.get_mapped_range_mut();
@@ -218,7 +218,7 @@ impl MonoImgproc {
         self.input_stage_buffer.unmap();
     }
 
-    fn read_output(&self, output_img: &mut impl Image<1>) {
+    fn read_output<T: Image<1> + ?Sized>(&self, output_img: &mut T) {
         let slice = self.output_stage_buffer.slice(..);
         self.map_buffer_sync(&slice, wgpu::MapMode::Read);
         let output_buf = slice.get_mapped_range();
@@ -237,10 +237,10 @@ impl MonoImgproc {
         pollster::block_on(Self::new_async(options))
     }
 
-    pub fn process(
+    pub fn process<InputT: ConstImage<32> + ?Sized, OutputT: Image<1> + ?Sized>(
         &mut self,
-        input_img: &impl ConstImage<32>,
-        output_img: &mut impl Image<1>,
+        input_img: &InputT,
+        output_img: &mut OutputT,
         dithering_method: DitheringMethod,
     ) {
         assert_eq!(output_img.size(), self.opts.output_size);

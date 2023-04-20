@@ -17,7 +17,7 @@ impl Rotation {
     }
 }
 
-pub fn rotate<const BPP: i32>(input_img: impl ConstImage<BPP>, rotation: Rotation) -> ImageBuffer<BPP> {
+pub fn rotate<const BPP: i32, T: ConstImage<BPP> + ?Sized>(input_img: &T, rotation: Rotation) -> ImageBuffer<BPP> {
     assert!(BPP % 8 == 0, "Does not support non-byte-aligned image");
 
     let output_size = rotation.rotated_size(input_img.size());
@@ -57,7 +57,7 @@ mod tests {
         let input_img_data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
         let input_img = ConstImageView::<16>::new(input_img_data.as_slice(), 2, 3, None);
 
-        let output_img = rotate(input_img, Rotation::Rotate90);
+        let output_img = rotate(&input_img, Rotation::Rotate90);
         assert_eq!(output_img.size(), (3, 2).into());
         assert_eq!(output_img.pitch(), 6);
 

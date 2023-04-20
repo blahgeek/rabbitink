@@ -174,14 +174,14 @@ fn blend(cursor: u32, img: u32, alpha: u32) -> u32 {
 }
 
 impl Source for XcbGrabSource {
-    fn get_frame(&mut self) -> anyhow::Result<ConstImageView<32>> {
+    fn get_frame(&mut self) -> anyhow::Result<Box<dyn ConstImage<32> + '_>> {
         let screensaver_query_cookie = self.conn.send_request(&xcb::screensaver::QueryInfo {
             drawable: xcb::x::Drawable::Window(self.window),
         });
         let screensaver_queryinfo = self.conn.wait_for_reply(screensaver_query_cookie)?;
         trace!("got screensaver info: {:?}", screensaver_queryinfo);
         if screensaver_queryinfo.state() == xcb::screensaver::State::On as u8 {
-            return Ok(self.screensave_img.view());
+            return Ok(Box::new(self.screensave_img.view()));
         }
 
         let image_cookie = self.conn.send_request(&xcb::shm::GetImage {
@@ -216,11 +216,11 @@ impl Source for XcbGrabSource {
             self.draw_cursor(&mut image, cursor_image);
         }
 
-        Ok(ConstImageView::<32>::new(
+        Ok(Box::new(ConstImageView::<32>::new(
             self.shmem.slice(),
             self.size.width,
             self.size.height,
             Some(self.size.width * 4),
-        ))
+        )))
     }
 }
