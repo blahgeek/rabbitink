@@ -4,6 +4,7 @@ use crate::image::*;
 struct FrameAdapter<'a> {
     header: ImageHeader<32>,
     frame: scrap::Frame<'a>,
+    data_offset: usize,
 }
 
 impl<'a> HasImageHeader<32> for FrameAdapter<'a> {
@@ -14,7 +15,7 @@ impl<'a> HasImageHeader<32> for FrameAdapter<'a> {
 
 impl<'a> ConstImage<32> for FrameAdapter<'a> {
     fn data(&self) -> &[u8] {
-        &self.frame
+        &self.frame[self.data_offset..]
     }
 }
 
@@ -61,9 +62,16 @@ impl Source for GenericSource {
         let pitch = frame.len() as i32 / frame_h;
         assert!(pitch >= frame_w * 4);
 
+        let data_offset = (self.top_left.y * pitch + self.top_left.x * 4) as usize;
         Ok(Box::new(FrameAdapter {
-            header: ImageHeader::<32>::new(frame.len() as usize, frame_w, frame_h, Some(pitch)),
+            header: ImageHeader::<32>::new(
+                frame.len() as usize - data_offset,
+                self.size.width,
+                self.size.height,
+                Some(pitch),
+            ),
             frame,
+            data_offset,
         }))
     }
 }
