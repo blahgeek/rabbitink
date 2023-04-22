@@ -5,16 +5,16 @@ use clap::Parser;
 
 use rabbitink::app::{App, AppOptions};
 use rabbitink::driver::it8915::IT8915;
-use rabbitink::source::XcbGrabSource;
 use rabbitink::imgproc::Rotation;
+use rabbitink::source;
 
 #[derive(Parser, Debug)]
 struct Args {
     #[arg(long, default_value = "")]
     device: String,
 
-    #[arg(long, default_value = ":0.0")]
-    display: String,
+    #[arg(long)]
+    display: Option<String>,
 
     #[arg(long, default_value_t = 0)]
     grab_offx: i32,
@@ -49,8 +49,8 @@ fn main() -> anyhow::Result<()> {
     dev.pmic_control(Some(args.vcom), Some(true))?;
     dev.reset_display()?;
 
-    let source = XcbGrabSource::new(
-        &args.display,
+    let source = source::create_source(
+        args.display.as_deref(),
         Some((
             (args.grab_offx, args.grab_offy).into(),
             args.rotation.rotated_size(dev.get_screen_size()),

@@ -1,3 +1,5 @@
+use log::info;
+
 use super::Source;
 use crate::image::*;
 
@@ -19,7 +21,7 @@ impl<'a> ConstImage<32> for FrameAdapter<'a> {
     }
 }
 
-struct GenericSource {
+pub struct GenericSource {
     capture: scrap::Capturer,
 
     top_left: Point,
@@ -27,8 +29,13 @@ struct GenericSource {
 }
 
 impl<'a> GenericSource {
-    pub fn new(_: &str, rect: Option<(Point, Size)>) -> anyhow::Result<GenericSource> {
-        let display = scrap::Display::primary()?;
+    pub fn new(display_id: usize, rect: Option<(Point, Size)>) -> anyhow::Result<GenericSource> {
+        let displays = scrap::Display::all()?;
+        if display_id >= displays.len() {
+            anyhow::bail!("Invalid display id: {}", display_id);
+        }
+        info!("Using generic source with display ID {}", display_id);
+        let display = displays.into_iter().nth(display_id).unwrap();
         let capture = scrap::Capturer::new(display)?;
 
         let top_left = rect.map(|(p, _)| p).unwrap_or((0, 0).into());

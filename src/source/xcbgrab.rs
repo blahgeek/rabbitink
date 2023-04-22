@@ -68,8 +68,10 @@ fn make_screensave_img(size: Size) -> ImageBuffer<32> {
 }
 
 impl XcbGrabSource {
-    pub fn new(display_name: &str, rect: Option<(Point, Size)>) -> anyhow::Result<XcbGrabSource> {
-        let (conn, screen_num) = xcb::Connection::connect(Some(display_name))?;
+    pub fn new(display_name: Option<&str>, rect: Option<(Point, Size)>) -> anyhow::Result<XcbGrabSource> {
+        info!("Using xcbgrab source with display name {:?}", display_name);
+
+        let (conn, screen_num) = xcb::Connection::connect(display_name)?;
         let setup = conn.get_setup();
         let screen = setup.roots().nth(screen_num as usize).unwrap();
         let window = screen.root();

@@ -46,9 +46,9 @@ pub struct AppOptions {
     pub rotation: Rotation,
 }
 
-pub struct App<S> {
+pub struct App {
     driver: IT8915,
-    source: S,
+    source: Box<dyn Source>,
     options: AppOptions,
     current_run_mode: RunMode,
 
@@ -67,11 +67,8 @@ const TEXT_ROW_TYPICAL_HEIGHT: i32 = 40; // when considering "row ratio" below, 
                                          // so that the "row ratio" is more close to what we assume
 const SLOW_REFRESH_ROW_RATIO_THRESHOLD: f32 = 0.5; // do a slow (e.g. DU instead of A2) refresh if more than this ratio of rows are changed
 
-impl<S> App<S>
-where
-    S: Source,
-{
-    pub fn new(driver: IT8915, source: S, options: AppOptions) -> App<S> {
+impl App {
+    pub fn new(driver: IT8915, source: Box<dyn Source>, options: AppOptions) -> App {
         let current_run_mode =
             RunMode::read_from_file(&options.run_mode_config_path).unwrap_or_default();
         App {
