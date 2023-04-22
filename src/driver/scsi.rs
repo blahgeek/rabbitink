@@ -1,7 +1,10 @@
-mod bindings;
-mod ioctl;
-
 mod generic;
+
+#[cfg(target_os = "linux")]
+mod bindings;
+#[cfg(target_os = "linux")]
+mod ioctl;
+#[cfg(target_os = "linux")]
 mod linux;
 
 trait DeviceIO {
@@ -30,9 +33,10 @@ impl Device {
             let bus = capture.get(1).unwrap().as_str().parse::<u8>()?;
             let addr = capture.get(2).unwrap().as_str().parse::<u8>()?;
             Box::new(generic::GenericDeviceIO::new(Some((bus, addr)))?)
-        } else if cfg!(target_os = "linux") {
-            Box::new(linux::LinuxDeviceIO::open(std::path::Path::new(desc))?)
         } else {
+            #[cfg(target_os = "linux")]
+            {Box::new(linux::LinuxDeviceIO::open(std::path::Path::new(desc))?)}
+            #[cfg(not(target_os = "linux"))]
             unimplemented!()
         };
         Ok(Device { io: device_io })

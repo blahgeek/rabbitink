@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 extern crate bindgen;
 
 use std::env;
@@ -22,5 +24,6 @@ fn add_binding(header_path: &str) {
 }
 
 fn main() {
-    add_binding("src/driver/scsi/bindings.h");
+    #[cfg(target_os = "linux")]
+    {add_binding("src/driver/scsi/bindings.h");}
 }
