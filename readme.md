@@ -5,12 +5,13 @@ Use e-ink screens as low-latency computer monitor that is suitable for coding an
 
 TODO: video
 
-## Hardware requirement & supported platforms
+## Supported hardware & platforms
 
 RabbitInk supports e-ink screens with **IT8915 USB controllers**.
 You may buy such products (screen + control board) from [Waveshare](https://www.waveshare.com/product/displays/e-paper.htm)
 ([chinese](https://www.waveshare.net/list.html?cat=288&sid=MjU5&sid2=NTU=&pno=1)), filter those with USB interface.
-(disclaimer: I'm not affiliated to it).
+*(disclaimer: I'm not affiliated to it)*.
+Simply connect the controller to your PC with USB, no extra hardwares are required.
 I have verified that the following models works:
 
 - Waveshare 6inch HD, 1448x1072 resolution
@@ -19,7 +20,7 @@ I have verified that the following models works:
 **Linux with X11** is the main supported platform. Therotically it also works in macOS and Windows but I have not tested yet.
 I'm not sure about Wayland and I don't care.
 
-## Low latency & technics explained
+## Low latency & techniques explained
 
 The default *Mono run mode* of RabbitInk uses **black-white only color, with bayers dithering**.
 In this mode, the minimal display latency for a small change (typical on typing) is about **140 ms**.
