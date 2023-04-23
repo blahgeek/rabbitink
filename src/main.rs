@@ -10,20 +10,20 @@ use rabbitink::source;
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[arg(long, default_value = "")]
+    #[arg(long, short, default_value = "")]
     device: String,
 
-    #[arg(long)]
-    display: Option<String>,
+    #[arg(long, short)]
+    source: Option<String>,
 
     #[arg(long, default_value_t = 0)]
-    grab_offx: i32,
+    source_offx: i32,
 
     #[arg(long, default_value_t = 0)]
-    grab_offy: i32,
+    source_offy: i32,
 
     #[arg(long)]
-    vcom: u16,
+    vcom: f32,
 
     #[arg(long, short, default_value = "no-rotation")]
     rotation: Rotation,
@@ -50,9 +50,9 @@ fn main() -> anyhow::Result<()> {
     dev.reset_display()?;
 
     let source = source::create_source(
-        args.display.as_deref(),
+        args.source.as_deref(),
         Some((
-            (args.grab_offx, args.grab_offy).into(),
+            (args.source_offx, args.source_offy).into(),
             args.rotation.rotated_size(dev.get_screen_size()),
         )),
     )?;
