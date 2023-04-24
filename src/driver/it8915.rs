@@ -212,14 +212,17 @@ impl IT8915 {
         )
     }
 
-    pub fn pmic_control(&mut self, vcom: Option<u16>, power: Option<bool>) -> anyhow::Result<()> {
+    pub fn pmic_control(&mut self, vcom: Option<f32>, power: Option<bool>) -> anyhow::Result<()> {
         let mut cmd = PMICControlCmd {
             hdr: 0xfe,
             cmd: 0xa3,
             ..PMICControlCmd::default()
         };
         if let Some(vcom) = vcom {
-            cmd.vcom = BigEndianU16::from(vcom);
+            if vcom < 0.0 || vcom > 10.0 {
+                anyhow::bail!("VCOM value should be in range [0, 10] (unit: V)");
+            }
+            cmd.vcom = BigEndianU16::from((vcom * 1000.0) as u16);
             cmd.vcom_set = 1;
             info!("Setting VCOM value: {}", vcom);
         }

@@ -18,3 +18,8 @@ target/
 *.pdb
 
 # End of https://www.toptal.com/developers/gitignore/api/rust
+
+/*.dat
+/*.dump.txt
+notes.org
+arm-linux-gnueabihf

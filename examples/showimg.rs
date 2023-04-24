@@ -18,7 +18,7 @@ struct Args {
     mode: DisplayMode,
 
     #[arg(long)]
-    vcom: u16,
+    vcom: f32,
 
     #[arg(long, default_value_t = false)]
     reset: bool,

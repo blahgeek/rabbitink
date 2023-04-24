@@ -6,7 +6,7 @@ use crate::imgproc::dithering;
 
 use super::driver::it8915::{DisplayMode, MemMode, IT8915};
 use super::image::*;
-use super::imgproc::{MonoImgproc, MonoImgprocOptions, Rotation, rotate::rotate as rotate_image};
+use super::imgproc::{rotate::rotate as rotate_image, MonoImgproc, MonoImgprocOptions, Rotation};
 use super::run_mode::RunMode;
 use super::source::Source;
 
@@ -92,7 +92,10 @@ impl App {
         let t_load_start = std::time::Instant::now();
 
         let bgra_img = self.source.get_frame()?;
-        assert_eq!(bgra_img.size(), self.options.rotation.rotated_size(screen_size));
+        assert_eq!(
+            bgra_img.size(),
+            self.options.rotation.rotated_size(screen_size)
+        );
         let t_got_frame = std::time::Instant::now();
 
         let mut new_frame = ImageBuffer::<1>::new(
@@ -113,10 +116,11 @@ impl App {
             RunMode::Mono(v) => v,
             RunMode::Gray => unreachable!(),
         };
-        self.mono_imgproc
-            .as_mut()
-            .unwrap()
-            .process(bgra_img.as_ref(), &mut new_frame, dithering_method);
+        self.mono_imgproc.as_mut().unwrap().process(
+            bgra_img.as_ref(),
+            &mut new_frame,
+            dithering_method,
+        );
         let t_imgproc = std::time::Instant::now();
 
         let mut modified_range = match &self.mono_loaded_frame {
@@ -241,6 +245,7 @@ impl App {
 
     pub fn run(&mut self) -> anyhow::Result<()> {
         let mut t_last_update = std::time::Instant::now();
+        let mut t_last_need_update: Option<std::time::Instant> = None;
         while !self.options.terminate_flag.swap(false, Ordering::Relaxed) {
             let reload_requested = self.options.reload_flag.swap(false, Ordering::Relaxed);
             if reload_requested {
@@ -272,6 +277,7 @@ impl App {
                 self.poll_display_ready(/* block */ true)?;
                 self.do_display_full_refresh_block()?;
                 t_last_update = std::time::Instant::now();
+                t_last_need_update = None;
                 continue;
             }
 
@@ -279,6 +285,10 @@ impl App {
                 // frame not changed
                 std::thread::sleep(self.options.source_poll_interval);
                 continue;
+            }
+
+            if t_last_need_update.is_none() {
+                t_last_need_update = Some(std::time::Instant::now());
             }
 
             if !self.poll_display_ready(/* block */ false)? && !self.can_display_nonoverlapping() {
@@ -291,11 +301,12 @@ impl App {
 
             let t_update = std::time::Instant::now();
             info!(
-                "New frame displayed, interval: {:?}, mode: {:?}",
-                t_update - t_last_update,
+                "New frame displayed, process delay: {:?}, mode: {:?}",
+                t_update - t_last_need_update.unwrap(),
                 displayed_mode
             );
             t_last_update = t_update;
+            t_last_need_update = None;
         }
         self.driver.reset_display()?;
         Ok(())

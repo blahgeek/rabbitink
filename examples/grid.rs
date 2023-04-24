@@ -17,7 +17,7 @@ struct Args {
     width: i32,
 
     #[arg(long)]
-    vcom: u16,
+    vcom: f32,
 }
 
 fn main() -> anyhow::Result<()> {
