@@ -20,5 +20,8 @@ pub fn create_source(
     }
 
     let display_id = display.unwrap_or("0").parse::<usize>()?;
-    return Ok(Box::new(generic::GenericSource::new(display_id, rect)?));
+    let result = Box::new(generic::GenericSource::new(display_id, rect)?);
+    // FIXME: In macOS, the source need some time to initialize
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    return Ok(result);
 }

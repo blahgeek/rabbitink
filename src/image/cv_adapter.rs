@@ -10,7 +10,7 @@ pub fn cvmat_image_view<const BPP: i32>(m: &cv::core::Mat) -> ConstImageView<BPP
     ConstImageView::new(data, m.cols(), m.rows(), None)
 }
 
-pub fn cvmat_from_image<const BPP: i32>(img: &impl ConstImage<BPP>) -> cv::core::Mat {
+pub fn cvmat_from_image<const BPP: i32, T: ConstImage<BPP> + ?Sized>(img: &T) -> cv::core::Mat {
     let cv_type = match BPP {
         8 => cv::core::CV_8UC1,
         16 => cv::core::CV_8UC2,
