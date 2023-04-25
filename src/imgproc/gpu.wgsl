@@ -52,13 +52,18 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>,
 
   if (x < params.output_width && y < params.output_height) {
     let input_coord: vec2<f32> = coord_transform * vec3(f32(x) + 0.5, f32(y) + 0.5, 1.0);
-    let input_coord_x: u32 = u32(clamp(input_coord.x, 0.0, f32(params.input_width) - 1.0));
-    let input_coord_y: u32 = u32(clamp(input_coord.y, 0.0, f32(params.input_height) - 1.0));
+    let input_coord_x: u32 = u32(input_coord.x);
+    let input_coord_y: u32 = u32(input_coord.y);
 
-    let bgra: u32 = input_img[input_coord_y * params.input_pitch / 4u + input_coord_x];
-    // little endian
-    let gray = rgb_to_gray_with_dithering(
-      vec3((bgra >> 16u) & 0xffu, (bgra >> 8u) & 0xffu, bgra & 0xffu), x, y);
+    var gray: u32 = 1u;  // default white
+    if (input_coord_x >= 0u && input_coord_x < params.input_width &&
+        input_coord_y >= 0u && input_coord_y < params.input_height) {
+
+      let bgra: u32 = input_img[input_coord_y * params.input_pitch / 4u + input_coord_x];
+      // little endian
+      gray = rgb_to_gray_with_dithering(
+        vec3((bgra >> 16u) & 0xffu, (bgra >> 8u) & 0xffu, bgra & 0xffu), x, y);
+    }
 
     if (gray != 0u) {
       atomicOr(workgroup_output_32bit, 1u << (x % 32u));

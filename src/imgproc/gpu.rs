@@ -50,17 +50,12 @@ fn mat_transpose<const COL: usize, const ROW: usize, const SIZE: usize>(
     ret
 }
 
+fn optimal_pitch(width: i32, bpp: i32) -> i32 {
+    (((width * bpp + 7) / 8) + 7) / 8 * 8  // 8 byte aligned
+}
+
 impl MonoImgproc {
     pub async fn new_async(opts: MonoImgprocOptions) -> Self {
-        assert!(
-            opts.input_pitch % 4 == 0 && opts.output_pitch % 4 == 0,
-            "gpu imgproc requires 4byte aligned"
-        );
-        assert!(
-            opts.rotation.rotated_size(opts.input_size) == opts.output_size,
-            "invalid size"
-        );
-
         let instance = wgpu::Instance::default();
 
         let adapter = instance
@@ -75,21 +70,21 @@ impl MonoImgproc {
             .unwrap();
 
         let input_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("bgra"),
-            size: (opts.input_size.height * opts.input_pitch) as u64,
+            label: Some("input"),
+            size: (opts.input_size.height * optimal_pitch(opts.input_size.width, 32)) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let input_stage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("input_staging"),
-            size: (opts.input_size.height * opts.input_pitch) as u64,
+            size: (opts.input_size.height * optimal_pitch(opts.input_size.width, 32)) as u64,
             usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::MAP_WRITE,
             mapped_at_creation: false,
         });
 
         let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("bw"),
-            size: (opts.output_size.height * opts.output_pitch) as u64,
+            label: Some("output"),
+            size: (opts.output_size.height * optimal_pitch(opts.output_size.width, 1)) as u64,
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_SRC
                 | wgpu::BufferUsages::COPY_DST,
@@ -97,7 +92,7 @@ impl MonoImgproc {
         });
         let output_stage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("output_staging"),
-            size: (opts.output_size.height * opts.output_pitch) as u64,
+            size: (opts.output_size.height * optimal_pitch(opts.output_size.width, 1)) as u64,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -105,10 +100,10 @@ impl MonoImgproc {
         let params_data: Vec<i32> = vec![
             opts.input_size.width,
             opts.input_size.height,
-            opts.input_pitch,
+            optimal_pitch(opts.input_size.width, 32),
             opts.output_size.width,
             opts.output_size.height,
-            opts.output_pitch,
+            optimal_pitch(opts.output_size.width, 1),
         ];
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("params"),
@@ -120,10 +115,10 @@ impl MonoImgproc {
             Rotation::NoRotation => [1.0, 0.0, 0.0,
                                      0.0, 1.0, 0.0],
             Rotation::Rotate90 => [0.0, 1.0, 0.0,
-                                   -1.0, 0.0, opts.input_size.height as f32],
-            Rotation::Rotate180 => [-1.0, 0.0, opts.input_size.width as f32,
-                                    0.0, -1.0, opts.input_size.height as f32],
-            Rotation::Rotate270 => [0.0, -1.0, opts.input_size.width as f32,
+                                   -1.0, 0.0, opts.output_size.width as f32],
+            Rotation::Rotate180 => [-1.0, 0.0, opts.output_size.width as f32,
+                                    0.0, -1.0, opts.output_size.height as f32],
+            Rotation::Rotate270 => [0.0, -1.0, opts.output_size.height as f32,
                                     1.0, 0.0, 1.0],
         });
         let coord_transform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -204,6 +199,7 @@ impl MonoImgproc {
     }
 
     fn write_input<T: ConstImage<32> + ?Sized>(&self, input_img: &T) {
+        assert_eq!(input_img.size(), self.opts.input_size);
         let slice = self.input_stage_buffer.slice(..);
         self.map_buffer_sync(&slice, wgpu::MapMode::Write);
         let mut stage_buf = slice.get_mapped_range_mut();
@@ -211,7 +207,7 @@ impl MonoImgproc {
             &mut stage_buf,
             self.opts.input_size.width,
             self.opts.input_size.height,
-            Some(self.opts.input_pitch),
+            Some(optimal_pitch(self.opts.input_size.width, 32))
         );
         stage_buf_img.copy_from(input_img);
         drop(stage_buf);
@@ -219,6 +215,7 @@ impl MonoImgproc {
     }
 
     fn read_output<T: Image<1> + ?Sized>(&self, output_img: &mut T) {
+        assert_eq!(output_img.size(), self.opts.output_size);
         let slice = self.output_stage_buffer.slice(..);
         self.map_buffer_sync(&slice, wgpu::MapMode::Read);
         let output_buf = slice.get_mapped_range();
@@ -226,7 +223,7 @@ impl MonoImgproc {
             &output_buf,
             self.opts.output_size.width,
             self.opts.output_size.height,
-            Some(self.opts.output_pitch),
+            Some(optimal_pitch(self.opts.output_size.width, 1)),
         );
         output_img.copy_from(&output_buf_img);
         drop(output_buf);
@@ -243,11 +240,6 @@ impl MonoImgproc {
         output_img: &mut OutputT,
         dithering_method: DitheringMethod,
     ) {
-        assert_eq!(output_img.size(), self.opts.output_size);
-        assert_eq!(output_img.pitch(), self.opts.output_pitch);
-        assert_eq!(input_img.size(), self.opts.input_size);
-        assert_eq!(input_img.pitch(), self.opts.input_pitch);
-
         let t_start = std::time::Instant::now();
 
         self.write_input(input_img);
@@ -340,8 +332,6 @@ mod tests {
             let mut imgproc = MonoImgproc::new(MonoImgprocOptions {
                 input_size: color_img.size(),
                 output_size: output_img.size(),
-                input_pitch: color_img.pitch(),
-                output_pitch: output_img.pitch(),
                 rotation: Rotation::NoRotation,
             });
             imgproc.process(&color_img, &mut output_img, DitheringMethod::Bayers4);
@@ -361,8 +351,6 @@ mod tests {
             let mut imgproc = MonoImgproc::new(MonoImgprocOptions {
                 input_size: color_img.size(),
                 output_size: output_img.size(),
-                input_pitch: color_img.pitch(),
-                output_pitch: output_img.pitch(),
                 rotation: Rotation::Rotate180,
             });
             imgproc.process(&color_img, &mut output_img, DitheringMethod::Bayers4);
@@ -394,9 +382,7 @@ mod tests {
 
         let mut imgproc = MonoImgproc::new(MonoImgprocOptions {
             input_size: color_img.size(),
-            input_pitch: color_img.pitch(),
             output_size: output_img.size(),
-            output_pitch: output_img.pitch(),
             rotation: Rotation::Rotate90,
         });
         imgproc.process(&color_img, &mut output_img, DitheringMethod::NoDithering);
@@ -406,5 +392,38 @@ mod tests {
         assert_eq!(output_img_data[4], 0);
         assert_eq!(output_img_data[8], 255);
         assert_eq!(output_img_data[12], 0);
+    }
+
+    #[test]
+    fn test_rot90_with_mismatched_size() {
+        // (8, 32) image, (0, 3) is black
+        let color_img = {
+            let mut color_img = ImageBuffer::<32>::new(8, 32, None);
+            color_img.fill(0xff);
+            unsafe {
+                *color_img.mut_ptr(0).add(3 * 4) = 0;
+                *color_img.mut_ptr(0).add(3 * 4 + 1) = 0;
+                *color_img.mut_ptr(0).add(3 * 4 + 2) = 0;
+                *color_img.mut_ptr(0).add(3 * 4 + 3) = 0;
+            }
+            color_img
+        };
+
+        // output a (32, 4) image
+        let mut output_img_data: Vec<u8> = vec![0; 16];
+        let mut output_img = ImageView::<1>::new(output_img_data.as_mut_slice(), 32, 4, Some(4));
+
+        let mut imgproc = MonoImgproc::new(MonoImgprocOptions {
+            input_size: color_img.size(),
+            output_size: output_img.size(),
+            rotation: Rotation::Rotate90,
+        });
+        imgproc.process(&color_img, &mut output_img, DitheringMethod::NoDithering);
+        drop(output_img);
+
+        assert_eq!(output_img_data[3], 255);
+        assert_eq!(output_img_data[7], 255);
+        assert_eq!(output_img_data[11], 255);
+        assert_eq!(output_img_data[15], 127);
     }
 }

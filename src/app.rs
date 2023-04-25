@@ -107,9 +107,7 @@ impl App {
             self.mono_imgproc = Some(MonoImgproc::new(MonoImgprocOptions {
                 rotation: self.options.rotation,
                 input_size: bgra_img.size(),
-                input_pitch: bgra_img.pitch(),
                 output_size: screen_size,
-                output_pitch: self.driver.get_mem_pitch(MemMode::Mem1bpp),
             }));
         }
         let dithering_method = match self.current_run_mode {

@@ -15,9 +15,7 @@ pub enum DitheringMethod {
 #[derive(Clone, Copy, Debug)]
 pub struct MonoImgprocOptions {
     pub input_size: Size,
-    pub input_pitch: i32,
     pub output_size: Size,
-    pub output_pitch: i32,
     pub rotation: Rotation,
 }
 
