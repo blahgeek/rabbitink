@@ -52,7 +52,7 @@ pub struct App {
     options: AppOptions,
     current_run_mode: RunMode,
 
-    mono_imgproc: Option<MonoImgproc>, // initialize on first frame, for correct pitch
+    mono_imgproc: MonoImgproc,
     mono_loaded_frame: Option<ImageBuffer<1>>,
     gray_loaded_frame: Option<ImageBuffer<8>>,
 
@@ -71,12 +71,17 @@ impl App {
     pub fn new(driver: IT8915, source: Box<dyn Source>, options: AppOptions) -> App {
         let current_run_mode =
             RunMode::read_from_file(&options.run_mode_config_path).unwrap_or_default();
+        let mono_imgproc = MonoImgproc::new(MonoImgprocOptions {
+            rotation: options.rotation,
+            input_size: source.frame_size(),
+            output_size: driver.get_screen_size(),
+        });
         App {
             driver,
             source,
             options,
             current_run_mode,
-            mono_imgproc: None,
+            mono_imgproc,
             mono_loaded_frame: None,
             gray_loaded_frame: None,
             dirty_rows: RowSet::default(),
@@ -92,10 +97,6 @@ impl App {
         let t_load_start = std::time::Instant::now();
 
         let bgra_img = self.source.get_frame()?;
-        assert_eq!(
-            bgra_img.size(),
-            self.options.rotation.rotated_size(screen_size)
-        );
         let t_got_frame = std::time::Instant::now();
 
         let mut new_frame = ImageBuffer::<1>::new(
@@ -103,18 +104,11 @@ impl App {
             screen_size.height,
             Some(self.driver.get_mem_pitch(MemMode::Mem1bpp)),
         );
-        if self.mono_imgproc.is_none() {
-            self.mono_imgproc = Some(MonoImgproc::new(MonoImgprocOptions {
-                rotation: self.options.rotation,
-                input_size: bgra_img.size(),
-                output_size: screen_size,
-            }));
-        }
         let dithering_method = match self.current_run_mode {
             RunMode::Mono(v) => v,
             RunMode::Gray => unreachable!(),
         };
-        self.mono_imgproc.as_mut().unwrap().process(
+        self.mono_imgproc.process(
             bgra_img.as_ref(),
             &mut new_frame,
             dithering_method,
@@ -154,7 +148,6 @@ impl App {
         let screen_size = self.driver.get_screen_size();
         let bgra_img_orig = self.source.get_frame()?;
         let bgra_img = rotate_image(bgra_img_orig.as_ref(), self.options.rotation);
-        assert_eq!(bgra_img.size(), screen_size);
         let gray_img = dithering::floyd_steinberg(&bgra_img, dithering::GREY16_TARGET_COLOR_SPACE);
 
         // let mut modified = true;

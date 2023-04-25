@@ -64,11 +64,15 @@ pub struct XcbGrabSource {
 fn make_screensave_img(size: Size) -> ImageBuffer<32> {
     let mut img = ImageBuffer::<32>::new(size.width, size.height, None);
     img.fill(0xff);
-    return img
+    return img;
 }
 
 impl XcbGrabSource {
-    pub fn new(display_name: Option<&str>, rect: Option<(Point, Size)>) -> anyhow::Result<XcbGrabSource> {
+    pub fn new(
+        display_name: Option<&str>,
+        top_left: Point,
+        max_size: Option<Size>,
+    ) -> anyhow::Result<XcbGrabSource> {
         info!("Using xcbgrab source with display name {:?}", display_name);
 
         let (conn, screen_num) = xcb::Connection::connect(display_name)?;
@@ -96,10 +100,24 @@ impl XcbGrabSource {
             bail!("Unsupported format: {:?}", format);
         }
 
-        let (top_left, size) = rect.unwrap_or((
-            (0, 0).into(),
-            (geo.width() as i32, geo.height() as i32).into(),
-        ));
+        if top_left.x < 0
+            || top_left.x >= geo.width() as i32
+            || top_left.y < 0
+            || top_left.y >= geo.height() as i32
+        {
+            bail!("Invalid top_left: {:?}", top_left);
+        }
+
+        let size = Size {
+            width: i32::min(
+                max_size.map_or(0, |x| x.width),
+                geo.width() as i32 - top_left.x,
+            ),
+            height: i32::min(
+                max_size.map_or(0, |x| x.height),
+                geo.height() as i32 - top_left.y,
+            ),
+        };
         let frame_size = size.width * size.height * 4;
 
         let segment: xcb::shm::Seg = conn.generate_id();
@@ -111,8 +129,8 @@ impl XcbGrabSource {
             read_only: false,
         })?;
         info!(
-            "Created XcbGrabSource: {:?}, {:?}, {:?}",
-            window, format, rect
+            "Created XcbGrabSource: {:?}, {:?}, top_left={:?}, size={:?}",
+            window, format, top_left, size
         );
         Ok(XcbGrabSource {
             conn,
@@ -176,6 +194,10 @@ fn blend(cursor: u32, img: u32, alpha: u32) -> u32 {
 }
 
 impl Source for XcbGrabSource {
+    fn frame_size(&self) -> Size {
+        self.size
+    }
+
     fn get_frame(&mut self) -> anyhow::Result<Box<dyn ConstImage<32> + '_>> {
         let screensaver_query_cookie = self.conn.send_request(&xcb::screensaver::QueryInfo {
             drawable: xcb::x::Drawable::Window(self.window),

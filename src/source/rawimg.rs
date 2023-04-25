@@ -67,5 +67,8 @@ impl Source for RawimgSource {
         }
         Ok(Box::new(self.current_frame.view()))
     }
+    fn frame_size(&self) -> Size {
+        self.current_frame.size()
+    }
 }
 

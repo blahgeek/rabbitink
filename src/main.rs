@@ -51,10 +51,8 @@ fn main() -> anyhow::Result<()> {
 
     let source = source::create_source(
         args.source.as_deref(),
-        Some((
-            (args.source_offx, args.source_offy).into(),
-            args.rotation.rotated_size(dev.get_screen_size()),
-        )),
+        (args.source_offx, args.source_offy).into(),
+        Some(args.rotation.rotated_size(dev.get_screen_size())),
     )?;
 
     let reload_flag = Arc::new(AtomicBool::default());

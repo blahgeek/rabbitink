@@ -29,7 +29,11 @@ pub struct GenericSource {
 }
 
 impl<'a> GenericSource {
-    pub fn new(display_id: usize, rect: Option<(Point, Size)>) -> anyhow::Result<GenericSource> {
+    pub fn new(
+        display_id: usize,
+        top_left: Point,
+        max_size: Option<Size>,
+    ) -> anyhow::Result<GenericSource> {
         let displays = scrap::Display::all()?;
         if display_id >= displays.len() {
             anyhow::bail!("Invalid display id: {}", display_id);
@@ -38,21 +42,29 @@ impl<'a> GenericSource {
         let display = displays.into_iter().nth(display_id).unwrap();
         let capture = scrap::Capturer::new(display)?;
 
-        let top_left = rect.map(|(p, _)| p).unwrap_or((0, 0).into());
-        let size = rect
-            .map(|(_, s)| s)
-            .unwrap_or((capture.width() as i32, capture.height() as i32).into());
-
-        if top_left.x + size.width > capture.width() as i32
-            || top_left.y + size.height > capture.height() as i32
+        if top_left.x < 0
+            || top_left.x >= capture.width() as i32
+            || top_left.y < 0
+            || top_left.y >= capture.height() as i32
         {
             anyhow::bail!(
-                "Invalid rect: {:?}, screen size: {}x{}",
-                rect,
+                "Invalid top_left: {:?}, capture size={}x{}",
+                top_left,
                 capture.width(),
                 capture.height()
             );
         }
+
+        let size = Size {
+            width: i32::min(
+                max_size.map_or(0, |x| x.width),
+                capture.width() as i32 - top_left.x,
+            ),
+            height: i32::min(
+                max_size.map_or(0, |x| x.height),
+                capture.height() as i32 - top_left.y,
+            ),
+        };
 
         Ok(GenericSource {
             capture,
@@ -63,6 +75,10 @@ impl<'a> GenericSource {
 }
 
 impl Source for GenericSource {
+    fn frame_size(&self) -> Size {
+        self.size
+    }
+
     fn get_frame(&mut self) -> anyhow::Result<Box<dyn ConstImage<32> + '_>> {
         let (frame_w, frame_h) = (self.capture.width() as i32, self.capture.height() as i32);
         let frame = self.capture.frame()?;
