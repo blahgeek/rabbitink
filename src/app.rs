@@ -91,7 +91,6 @@ impl App {
     }
 
     // get frame and load into driver,modify display_dirty_range
-    // return true if it's modified (display required)
     fn load_frame_mono(&mut self) -> anyhow::Result<()> {
         let screen_size = self.driver.get_screen_size();
         let t_load_start = std::time::Instant::now();
@@ -252,12 +251,17 @@ impl App {
                 }
             }
 
-            match self.current_run_mode {
-                RunMode::Mono(_) => self.load_frame_mono()?,
-                RunMode::Gray => self.load_frame_gray()?,
+            let load_result = match self.current_run_mode {
+                RunMode::Mono(_) => self.load_frame_mono(),
+                RunMode::Gray => self.load_frame_gray(),
+            };
+            if load_result.is_err() {   // TODO: check the error type
+                // frame not ready
+                std::thread::sleep(self.options.source_poll_interval);
+                continue;
             }
-            let need_display = !self.dirty_rows.is_empty();
 
+            let need_display = !self.dirty_rows.is_empty();
             let full_refresh = (reload_requested
                 && (!self.full_refreshed || t_last_update.elapsed() > FULL_REFRESH_MIN_INTERVAL))
                 || (!need_display
