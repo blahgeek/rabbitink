@@ -50,6 +50,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>,
 
   let workgroup_output_32bit = &output_32bit_arr[local_id.x / 32u];
 
+  // for some reason, explicit initialization is required in macos (metal backend)
+  if (x % 32u == 0u) {
+    *workgroup_output_32bit = 0u;
+  }
+  workgroupBarrier();
+
   if (x < params.output_width && y < params.output_height) {
     let input_coord: vec2<f32> = coord_transform * vec3(f32(x) + 0.5, f32(y) + 0.5, 1.0);
     let input_coord_x: u32 = u32(input_coord.x);

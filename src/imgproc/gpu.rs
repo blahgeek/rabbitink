@@ -365,6 +365,35 @@ mod tests {
     }
 
     #[test]
+    fn test_large() {
+        let input_img_data = {
+            let mut v = Vec::<u8>::new();
+            for i in 0..(4 * 2048 * 1024) {
+                v.push(if (i / 4) % 2 == 0 { 0xff } else { 0 });
+            }
+            v
+        };
+        let color_img = ConstImageView::<32>::new(input_img_data.as_slice(), 2048, 1024, None);
+
+        let mut output_img_data: Vec<u8> = vec![0; 256*1024];
+        let mut imgproc = MonoImgproc::new(MonoImgprocOptions {
+            input_size: color_img.size(),
+            output_size: (2048, 1024).into(),
+            rotation: Rotation::NoRotation,
+        });
+        for _ in 0..10 {
+            let mut output_img = ImageView::<1>::new(output_img_data.as_mut_slice(), 2048, 1024, None);
+            output_img.fill(0);
+            imgproc.process(&color_img, &mut output_img, DitheringMethod::Bayers4);
+            drop(output_img);
+
+            for i in 0..(256*1024) {
+                assert_eq!(output_img_data[i], 0b01010101);
+            }
+        }
+    }
+
+    #[test]
     fn test_rot90() {
         let input_img_data = {
             let mut v = Vec::<u8>::new();
