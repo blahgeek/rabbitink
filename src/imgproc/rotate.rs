@@ -17,18 +17,20 @@ impl Rotation {
     }
 }
 
-pub fn rotate<const BPP: i32, T: ConstImage<BPP> + ?Sized>(input_img: &T, rotation: Rotation) -> ImageBuffer<BPP> {
+pub fn rotate<const BPP: i32, T: ConstImage<BPP> + ?Sized>(
+    input_img: &T,
+    rotation: Rotation,
+    output_size: Size,
+) -> ImageBuffer<BPP> {
     assert!(BPP % 8 == 0, "Does not support non-byte-aligned image");
-
-    let output_size = rotation.rotated_size(input_img.size());
     let mut output_img = ImageBuffer::<BPP>::new(output_size.width, output_size.height, None);
 
     let transform = |x: i32, y: i32| -> (i32, i32) {
         match rotation {
             Rotation::NoRotation => (x, y),
-            Rotation::Rotate90 => (y, input_img.height() - 1 - x),
-            Rotation::Rotate180 => (input_img.width() - 1 - x, input_img.height() - 1 - y),
-            Rotation::Rotate270 => (input_img.width() - 1 - y, x),
+            Rotation::Rotate90 => (y, output_size.width - 1 - x),
+            Rotation::Rotate180 => (output_size.width - 1 - x, output_size.height - 1 - y),
+            Rotation::Rotate270 => (output_size.height - 1 - y, x),
         }
     };
 
@@ -36,11 +38,19 @@ pub fn rotate<const BPP: i32, T: ConstImage<BPP> + ?Sized>(input_img: &T, rotati
         let row_ptr = output_img.mut_ptr(y);
         for x in 0..output_size.width {
             let (input_x, input_y) = transform(x, y);
-            let input_row_ptr = input_img.ptr(input_y);
-            unsafe {
-                std::ptr::copy(input_row_ptr.add((input_x * BPP / 8) as usize),
-                               row_ptr.add((x * BPP / 8) as usize),
-                               (BPP / 8) as usize);
+            if input_x >= 0
+                && input_x < input_img.width()
+                && input_y >= 0
+                && input_y < input_img.height()
+            {
+                let input_row_ptr = input_img.ptr(input_y);
+                unsafe {
+                    std::ptr::copy(
+                        input_row_ptr.add((input_x * BPP / 8) as usize),
+                        row_ptr.add((x * BPP / 8) as usize),
+                        (BPP / 8) as usize,
+                    );
+                }
             }
         }
     }
@@ -57,13 +67,13 @@ mod tests {
         let input_img_data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
         let input_img = ConstImageView::<16>::new(input_img_data.as_slice(), 2, 3, None);
 
-        let output_img = rotate(&input_img, Rotation::Rotate90);
-        assert_eq!(output_img.size(), (3, 2).into());
-        assert_eq!(output_img.pitch(), 6);
+        let output_img = rotate(&input_img, Rotation::Rotate90, (4, 3).into());
+        assert_eq!(output_img.size(), (4, 3).into());
+        assert_eq!(output_img.pitch(), 8);
 
-        let output_data = unsafe {
-            std::slice::from_raw_parts(output_img.ptr(0) as *const u8, 12)
-        };
-        assert_eq!(output_data, &[8, 9, 4, 5, 0, 1, 10, 11, 6, 7, 2, 3]);
+        let output_data = unsafe { std::slice::from_raw_parts(output_img.ptr(0) as *const u8, 24) };
+        assert_eq!(output_data, &[0, 0, 8, 9, 4, 5, 0, 1,
+                                  0, 0, 10, 11, 6, 7, 2, 3,
+                                  0, 0, 0, 0, 0, 0, 0, 0]);
     }
 }

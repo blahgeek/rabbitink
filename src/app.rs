@@ -145,8 +145,8 @@ impl App {
 
     fn load_frame_gray(&mut self) -> anyhow::Result<()> {
         let screen_size = self.driver.get_screen_size();
-        let bgra_img_orig = self.source.get_frame()?;
-        let bgra_img = rotate_image(bgra_img_orig.as_ref(), self.options.rotation);
+        let source_img = self.source.get_frame()?;
+        let bgra_img = rotate_image(source_img.as_ref(), self.options.rotation, screen_size);
         let gray_img = dithering::floyd_steinberg(&bgra_img, dithering::GREY16_TARGET_COLOR_SPACE);
 
         // let mut modified = true;
