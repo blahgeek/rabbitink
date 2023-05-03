@@ -2,6 +2,9 @@ mod generic;
 #[cfg(target_os = "linux")]
 mod xcbgrab;
 
+#[cfg(target_os = "macos")]
+mod quartz;
+
 use crate::image::*;
 
 pub trait Source {
@@ -18,6 +21,11 @@ pub fn create_source(
     #[cfg(target_os = "linux")]
     if display.is_none() || display.unwrap().starts_with(":") {
         return Ok(Box::new(xcbgrab::XcbGrabSource::new(display, offset, max_size)?));
+    }
+
+    #[cfg(target_os = "macos")]
+    if let Ok(display_id) = display.unwrap_or("0").parse::<usize>() {
+        return Ok(Box::new(quartz::QuartzSource::new(display_id, offset, max_size)?));
     }
 
     let display_id = display.unwrap_or("0").parse::<usize>()?;
