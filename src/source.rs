@@ -1,5 +1,4 @@
 mod generic;
-mod rawimg;
 #[cfg(target_os = "linux")]
 mod xcbgrab;
 
@@ -19,14 +18,6 @@ pub fn create_source(
     #[cfg(target_os = "linux")]
     if display.is_none() || display.unwrap().starts_with(":") {
         return Ok(Box::new(xcbgrab::XcbGrabSource::new(display, offset, max_size)?));
-    }
-
-    if display.is_some() && display.unwrap() == "-" {
-        if let Some(size) = max_size {
-            return Ok(Box::new(rawimg::RawimgSource::new(size)?));
-        } else {
-            anyhow::bail!("Size must be specified when using rawimg source");
-        }
     }
 
     let display_id = display.unwrap_or("0").parse::<usize>()?;
