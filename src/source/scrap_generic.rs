@@ -21,19 +21,20 @@ impl<'a> ConstImage<32> for FrameAdapter<'a> {
     }
 }
 
-pub struct GenericSource {
+pub struct ScrapGenericSource {
     capture: scrap::Capturer,
 
     top_left: Point,
     size: Size,
 }
 
-impl<'a> GenericSource {
+impl<'a> ScrapGenericSource {
+    #[allow(dead_code)]
     pub fn new(
         display_id: usize,
         top_left: Point,
         max_size: Option<Size>,
-    ) -> anyhow::Result<GenericSource> {
+    ) -> anyhow::Result<ScrapGenericSource> {
         let displays = scrap::Display::all()?;
         if display_id >= displays.len() {
             anyhow::bail!("Invalid display id: {}", display_id);
@@ -66,7 +67,7 @@ impl<'a> GenericSource {
             ),
         };
 
-        Ok(GenericSource {
+        Ok(ScrapGenericSource {
             capture,
             top_left,
             size,
@@ -74,7 +75,7 @@ impl<'a> GenericSource {
     }
 }
 
-impl Source for GenericSource {
+impl Source for ScrapGenericSource {
     fn frame_size(&self) -> Size {
         self.size
     }
