@@ -24,6 +24,6 @@ fn add_binding(header_path: &str) {
 }
 
 fn main() {
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", feature = "native_scsi"))]
     {add_binding("src/driver/scsi/bindings.h");}
 }

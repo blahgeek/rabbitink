@@ -1,10 +1,10 @@
 mod generic;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "native_scsi"))]
 mod bindings;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "native_scsi"))]
 mod ioctl;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "native_scsi"))]
 mod linux;
 
 trait DeviceIO {
@@ -34,9 +34,9 @@ impl Device {
             let addr = capture.get(2).unwrap().as_str().parse::<u8>()?;
             Box::new(generic::GenericDeviceIO::new(Some((bus, addr)))?)
         } else {
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_os = "linux", feature = "native_scsi"))]
             {Box::new(linux::LinuxDeviceIO::open(std::path::Path::new(desc))?)}
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(not(all(target_os = "linux", feature = "native_scsi")))]
             unimplemented!()
         };
         Ok(Device { io: device_io })
