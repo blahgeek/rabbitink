@@ -69,6 +69,24 @@ $ ./target/release/rabbitink --vcom <vcom value for your eink display, e.g. "2.3
 This should mirror your desktop (by screen capturing) to the eink display.
 Run `rabbitink --help` for more options.
 
+### Application configuration
+
+A proper theme and color scheme in editor/terminal is *essential* for a good user experience.
+This varies across different applications and it's mostly out the scope of this documentation, but some general advice:
+
+- **IMPORTANT** Disable font antialias. In linux, use [fontconfig](https://askubuntu.com/questions/396122/disabling-the-anti-aliasing-for-a-specific-font-with-users-fonts-conf).
+- Use pure white and black as background and default foreground.
+- Reduce font color options. Use italics, weights and underlines instead.
+  However, it does NOT means that all colors should be removed:
+  it's just they will become "gray-ish" because of dithering.
+- Try to have application automatically triggering refresh (by sending `USR1` signal, see below)
+  when it knows some context switch happened (e.g. after opening a new file).
+
+Here's some of my configurations:
+[emacs theme](https://github.com/blahgeek/emacs.d/blob/8263afe9e95839e17ffacd7713030e49bd64b16a/monoink-theme.el),
+[emacs config](https://github.com/blahgeek/emacs.d/blob/8263afe9e95839e17ffacd7713030e49bd64b16a/init.el#L342-L362),
+[wm config](https://github.com/blahgeek/i3config/blob/076fe53e97cabe8abb86bf0ec65580f74f10ac7d/config#L68-L73).
+
 ### Display control while running
 
 - Send `USR1` signal to rabbitink process would force a screen refresh (GC16), to clear ghosting.
@@ -95,21 +113,3 @@ DP-0 port is used as the virtual display for eink (1600x1200):
 ```
 xrandr --fb 4160x1440 --output HDMI-0 --mode 2560x1440 --primary --pos 1600x0 --output DP-0 --mode 1024x768 --scale-from 1600x1200 --pos 0x0
 ```
-
-### Application configuration
-
-A proper theme and color scheme in editor/terminal is essential for good user experience.
-This varies across different applications and it's out the scope of this documentation, but some general advice:
-
-- *IMPORTANT* Disable font antialias. In linux, use [fontconfig](https://askubuntu.com/questions/396122/disabling-the-anti-aliasing-for-a-specific-font-with-users-fonts-conf).
-- Use pure white and black as background and default foreground.
-- Reduce font color options. Use italics, weights and underlines instead.
-  However, it does NOT means that all colors should be removed:
-  it's just they will become "gray-ish" because of dithering.
-- Try to have application automatically triggering refresh (by sending `USR1` signal as mentioned above)
-  when it knows some context switch happened (e.g. after opening a new file).
-  
-Here's some of my configurations:
-[emacs theme](https://github.com/blahgeek/emacs.d/blob/8263afe9e95839e17ffacd7713030e49bd64b16a/monoink-theme.el),
-[emacs config](https://github.com/blahgeek/emacs.d/blob/8263afe9e95839e17ffacd7713030e49bd64b16a/init.el#L342-L362),
-[wm config](https://github.com/blahgeek/i3config/blob/076fe53e97cabe8abb86bf0ec65580f74f10ac7d/config#L68-L73).
