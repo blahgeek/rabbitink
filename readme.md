@@ -14,8 +14,8 @@ You may buy such products (screen + control board) from [Waveshare](https://www.
 Simply connect the controller to your PC with USB, **no extra hardwares are required**.
 I have verified that the following models works:
 
-- Waveshare 6inch HD, 1448x1072 resolution
-- Waveshare 13.3inch, 1600x1200 resolution (the is the one in the above video, personally recommended for larger screen size)
+- Waveshare 6inch HD, 1448x1072 resolution [wiki](https://www.waveshare.com/wiki/6inch_HD_e-Paper_HAT)
+- Waveshare 13.3inch, 1600x1200 resolution [wiki](https://www.waveshare.com/wiki/13.3inch_e-Paper_HAT) [shop](https://www.waveshare.com/wiki/13.3inch_e-Paper_HAT) [shop cn](https://www.waveshare.net/shop/13.3inch-e-Paper-HAT.htm) (the is the one in the above video, personally recommended for larger screen size)
 
 **Linux with X11** is the main supported platform. Therotically it also works in macOS and Windows but I have not tested yet.
 I'm not sure about Wayland and I don't care.
