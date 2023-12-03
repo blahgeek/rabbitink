@@ -1,6 +1,6 @@
 # RabbitInk
 
-Use e-ink screens as low-latency computer monitor that is suitable for coding and writing.
+Use e-ink display modules as low-latency computer monitor that is suitable for coding and writing.
 (a.k.a., poor man's alternative to e.g. [DASUNG Paperlike monitors](https://shop.dasung.com/products/dasung-e-ink-paperlike-hd-front-light-and-touch-13-3-monitor).
 
 https://github.com/blahgeek/rabbitink/assets/1308450/1b2d3a3b-1c04-49ea-a24c-6e69a91613c8
