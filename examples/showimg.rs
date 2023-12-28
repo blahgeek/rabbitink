@@ -17,6 +17,9 @@ struct Args {
     #[arg(short, long, default_value = "gc16")]
     mode: DisplayMode,
 
+    #[arg(long, default_value_t = false)]
+    use_1bpp: bool,
+
     #[arg(long)]
     vcom: f32,
 
@@ -73,8 +76,13 @@ fn main() -> anyhow::Result<()> {
 
     let gray_img = dithering::floyd_steinberg(&img, dithering::GREY16_TARGET_COLOR_SPACE);
 
-    dev.load_image_fullwidth_8bpp(0, &gray_img)?;
-    dev.display_area((0, 0).into(), dev.get_screen_size(), args.mode, MemMode::Mem8bpp, true)?;
+    if args.use_1bpp {
+        dev.load_image_fullwidth_1bpp_from_8bpp(0, &gray_img)?;
+        dev.display_area((0, 0).into(), dev.get_screen_size(), args.mode, MemMode::Mem1bpp, true)?;
+    } else {
+        dev.load_image_fullwidth_8bpp(0, &gray_img)?;
+        dev.display_area((0, 0).into(), dev.get_screen_size(), args.mode, MemMode::Mem8bpp, true)?;
+    }
 
     Ok(())
 }
