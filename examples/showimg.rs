@@ -77,12 +77,12 @@ fn main() -> anyhow::Result<()> {
     let gray_img = dithering::floyd_steinberg(&img, dithering::GREY16_TARGET_COLOR_SPACE);
 
     if args.use_1bpp {
-        dev.load_image_fullwidth_1bpp_from_8bpp(0, &gray_img)?;
-        dev.display_area((0, 0).into(), dev.get_screen_size(), args.mode, MemMode::Mem1bpp, true)?;
+        let img = convert::repack_mono::<8, 1>(&gray_img, dev.get_mem_pitch(MemMode::Mem1bpp));
+        dev.load_image_fullwidth_1bpp(0, &img)?;
     } else {
         dev.load_image_fullwidth_8bpp(0, &gray_img)?;
-        dev.display_area((0, 0).into(), dev.get_screen_size(), args.mode, MemMode::Mem8bpp, true)?;
     }
 
+    dev.display_area((0, 0).into(), dev.get_screen_size(), args.mode, true)?;
     Ok(())
 }

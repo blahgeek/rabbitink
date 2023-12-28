@@ -72,10 +72,10 @@ fn main() -> anyhow::Result<()> {
 
         info!("clock: {}, start", n);
         for y in 0..y_repeat {
-            dev.load_image_fullwidth_1bpp_from_8bpp(
-                (args.height * y) as u32,
+            let packed = convert::repack_mono::<8, 1>(
                 &cv_adapter::cvmat_image_view::<8>(img.as_untyped()),
-            )?;
+                dev.get_mem_pitch(MemMode::Mem1bpp));
+            dev.load_image_fullwidth_1bpp((args.height * y) as u32, &packed)?;
         }
         info!("clock: {}, loaded image, {:?}", n, start.elapsed());
 
@@ -84,7 +84,6 @@ fn main() -> anyhow::Result<()> {
                 (0, args.height * y).into(),
                 (screen_size.width, args.height).into(),
                 args.mode,
-                MemMode::Mem1bpp,
                 false,
             )?;
         }

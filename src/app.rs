@@ -103,10 +103,7 @@ impl App {
             screen_size.height,
             Some(self.driver.get_mem_pitch(MemMode::Mem1bpp)),
         );
-        let dithering_method = match self.current_run_mode {
-            RunMode::Mono(v) => v,
-            RunMode::Gray => unreachable!(),
-        };
+        let dithering_method = self.current_run_mode.dithering_method().unwrap();
         self.mono_imgproc.process(
             bgra_img.as_ref(),
             &mut new_frame,
@@ -127,8 +124,20 @@ impl App {
                 )
                     .into(),
             );
-            self.driver
-                .load_image_fullwidth_1bpp(*modified_range.first().unwrap() as u32, &load_subimg)?;
+            match self.current_run_mode.mem_mode() {
+                MemMode::Mem1bpp => {
+                    self.driver.load_image_fullwidth_1bpp(
+                        *modified_range.first().unwrap() as u32, &load_subimg)?;
+                },
+                MemMode::Mem8bpp => {
+                    let unpacked = convert::repack_mono::<1, 8>(
+                        &load_subimg, self.driver.get_mem_pitch(MemMode::Mem8bpp));
+                    self.driver.load_image_fullwidth_8bpp(
+                        *modified_range.first().unwrap() as u32,
+                        &unpacked,
+                    )?;
+                },
+            };
             self.dirty_rows.append(&mut modified_range);
             drop(modified_range);
             self.mono_loaded_frame = Some(new_frame);
@@ -155,6 +164,7 @@ impl App {
                 return Ok(());
             }
         }
+        assert_eq!(self.current_run_mode.mem_mode(), MemMode::Mem8bpp);
         // TODO: load only modified rows
         self.driver.load_image_fullwidth_8bpp(0, &gray_img)?;
         self.gray_loaded_frame = Some(gray_img);
@@ -210,7 +220,6 @@ impl App {
             (0, dirty_start).into(),
             (screen_size.width, dirty_end - dirty_start).into(),
             mode,
-            self.current_run_mode.mem_mode(),
             false,
         )?;
         self.displaying_rows.extend(dirty_start..dirty_end);
@@ -224,7 +233,6 @@ impl App {
             (0, 0).into(),
             self.driver.get_screen_size(),
             DisplayMode::GC16,
-            self.current_run_mode.mem_mode(),
             true,
         )?;
         self.dirty_rows.clear();
@@ -252,7 +260,7 @@ impl App {
             }
 
             let load_result = match self.current_run_mode {
-                RunMode::Mono(_) => self.load_frame_mono(),
+                RunMode::Mono(_) | RunMode::MonoForce8bpp(_) => self.load_frame_mono(),
                 RunMode::Gray => self.load_frame_gray(),
             };
             if load_result.is_err() {   // TODO: check the error type

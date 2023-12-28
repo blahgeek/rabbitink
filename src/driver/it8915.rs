@@ -97,6 +97,7 @@ pub struct IT8915 {
     device: scsi::Device,
     sysinfo: Sysinfo,
     active_mem_mode: MemMode,
+    last_load_mem_mode: MemMode,
 
     mem_pitch_8bpp: u32,
     mem_pitch_1bpp: u32,
@@ -155,6 +156,7 @@ impl IT8915 {
             device,
             sysinfo,
             active_mem_mode: MemMode::Mem1bpp,
+            last_load_mem_mode: MemMode::Mem1bpp,
             mem_pitch_8bpp: sysinfo.width.val(),
             mem_pitch_1bpp: ((sysinfo.width.val() + 31) / 32) * 4, // 4byte align
         };
@@ -207,7 +209,6 @@ impl IT8915 {
             (0, 0).into(),
             self.get_screen_size(),
             DisplayMode::INIT,
-            MemMode::Mem1bpp,
             true,
         )
     }
@@ -335,16 +336,9 @@ impl IT8915 {
         row_offset: u32,
         image: &impl ConstImage<1>,
     ) -> anyhow::Result<()> {
+        assert_eq!(image.pitch(), self.mem_pitch_1bpp as i32);
+        self.last_load_mem_mode = MemMode::Mem1bpp;
         self.load_image_fullwidth_generic(row_offset, image, self.mem_pitch_1bpp)
-    }
-
-    pub fn load_image_fullwidth_1bpp_from_8bpp(
-        &mut self,
-        row_offset: u32,
-        image: &impl ConstImage<8>,
-    ) -> anyhow::Result<()> {
-        let packed = convert::pack(image, self.mem_pitch_1bpp as i32);
-        self.load_image_fullwidth_1bpp(row_offset, &packed)
     }
 
     pub fn load_image_fullwidth_8bpp(
@@ -352,6 +346,8 @@ impl IT8915 {
         row_offset: u32,
         image: &impl ConstImage<8>,
     ) -> anyhow::Result<()> {
+        assert_eq!(image.pitch(), self.mem_pitch_8bpp as i32);
+        self.last_load_mem_mode = MemMode::Mem8bpp;
         self.load_image_fullwidth_generic(row_offset, image, self.mem_pitch_8bpp)
     }
 
@@ -360,7 +356,6 @@ impl IT8915 {
         tl: Point,
         size: Size,
         mode: DisplayMode,
-        mem_mode: MemMode,
         wait_ready: bool,
     ) -> anyhow::Result<()> {
         trace!("Displaying region {:?} {:?}, mode = {:?}", tl, size, mode);
@@ -385,9 +380,9 @@ impl IT8915 {
             ),
         };
 
-        if self.active_mem_mode != mem_mode {
-            self.switch_mem_mode(mem_mode)?;
-            self.active_mem_mode = mem_mode;
+        if self.active_mem_mode != self.last_load_mem_mode {
+            self.switch_mem_mode(self.last_load_mem_mode)?;
+            self.active_mem_mode = self.last_load_mem_mode;
         }
         let cmd: [u8; 16] = [
             0xfe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x94, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
