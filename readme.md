@@ -5,6 +5,8 @@ Use e-ink display modules as low-latency computer monitor that is suitable for c
 
 https://github.com/blahgeek/rabbitink/assets/1308450/1b2d3a3b-1c04-49ea-a24c-6e69a91613c8
 
+![photo_6296228215928240207_y](https://github.com/blahgeek/rabbitink/assets/1308450/9466a223-40f0-4166-9c0d-27f87e59e85a)
+
 ## Supported hardware & platforms
 
 RabbitInk supports e-ink screens with **IT8915 USB controllers**.
