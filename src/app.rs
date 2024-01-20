@@ -154,22 +154,44 @@ impl App {
 
     fn load_frame_gray(&mut self) -> anyhow::Result<()> {
         let screen_size = self.driver.get_screen_size();
-        let source_img = self.source.get_frame()?;
-        let bgra_img = rotate_image(source_img.as_ref(), self.options.rotation, screen_size);
-        let gray_img = dithering::floyd_steinberg(&bgra_img, dithering::GREY16_TARGET_COLOR_SPACE);
+        let t_load_start = std::time::Instant::now();
 
-        // let mut modified = true;
-        if let Some(loaded_frame) = &self.gray_loaded_frame {
-            if compute_modified_row_range(loaded_frame, &gray_img).is_empty() {
-                return Ok(());
-            }
-        }
+        let bgra_image = self.source.get_frame()?;
+        let t_got_frame = std::time::Instant::now();
+
+        let bgra_image = rotate_image(bgra_image.as_ref(), self.options.rotation, screen_size);
+        let new_frame = dithering::floyd_steinberg(&bgra_image, dithering::GREY16_TARGET_COLOR_SPACE);
+        let t_imgproc = std::time::Instant::now();
+
+        let mut modified_range = match &self.gray_loaded_frame {
+            None => RowSet::from_iter(0..screen_size.height),
+            Some(loaded_frame) => compute_modified_row_range(&new_frame, loaded_frame),
+        };
         assert_eq!(self.current_run_mode.mem_mode(), MemMode::Mem8bpp);
-        // TODO: load only modified rows
-        self.driver.load_image_fullwidth_8bpp(0, &gray_img)?;
-        self.gray_loaded_frame = Some(gray_img);
+        if !modified_range.is_empty() {
+            let load_subimg = new_frame.subimg(
+                (0, *modified_range.first().unwrap()).into(),
+                (
+                    screen_size.width,
+                    *modified_range.last().unwrap() - modified_range.first().unwrap() + 1,
+                )
+                    .into(),
+            );
+            self.driver.load_image_fullwidth_8bpp(
+                *modified_range.first().unwrap() as u32,
+                &load_subimg,
+            )?;
+            self.dirty_rows.append(&mut modified_range);
+            drop(modified_range);
+            self.gray_loaded_frame = Some(new_frame);
+        }
+        let t_loaded = std::time::Instant::now();
 
-        self.dirty_rows = RowSet::from_iter(0..screen_size.height);
+        debug!("New gray frame loaded, {} rows dirty accumulated. Cost: get frame: {:?}, imgproc: {:?}, load: {:?}",
+               self.dirty_rows.len(),
+               t_got_frame - t_load_start,
+               t_imgproc - t_got_frame,
+               t_loaded - t_imgproc);
         Ok(())
     }
 
