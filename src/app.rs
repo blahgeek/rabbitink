@@ -1,4 +1,7 @@
 use log::{debug, info};
+use std::cell::RefCell;
+use std::hash::Hasher;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -12,26 +15,21 @@ use super::source::Source;
 
 type RowSet = std::collections::BTreeSet<i32>;
 
-fn compute_modified_row_range(
-    m_a: &impl ConstImage,
-    m_b: &impl ConstImage,
-) -> RowSet {
-    assert_eq!(m_a.size(), m_b.size());
-    assert_eq!(m_a.pitch(), m_b.pitch());
-    assert_eq!(m_a.format(), m_b.format());
+fn compute_row_hashes(m: &impl ConstImage) -> Vec<u64> {
+    (0..m.height())
+        .map(|y| {
+            let ptr = m.ptr(y);
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            hasher.write(unsafe {std::slice::from_raw_parts(ptr, m.pitch() as usize)});
+            hasher.finish()
+        })
+        .collect()
+}
 
-    let modified_rows = (0..m_a.height()).filter(|y| {
-        let y = *y;
-        let ptr_a = m_a.ptr(y);
-        let ptr_b = m_b.ptr(y);
-        let cmp_res = unsafe {
-            libc::memcmp(
-                ptr_a as *const libc::c_void,
-                ptr_b as *const libc::c_void,
-                m_a.pitch() as usize,
-            )
-        };
-        return cmp_res != 0;
+fn compute_modified_rows(row_hashes_a: &[u64], row_hashes_b: &[u64]) -> RowSet {
+    assert_eq!(row_hashes_a.len(), row_hashes_b.len());
+    let modified_rows = (0..row_hashes_a.len() as i32).filter(|i| {
+        row_hashes_a[*i as usize] != row_hashes_b[*i as usize]
     });
     RowSet::from_iter(modified_rows)
 }
@@ -52,11 +50,9 @@ pub struct App {
     source: Box<dyn Source>,
     options: AppOptions,
     current_run_mode: RunMode,
+    mono_imgproc: Rc<RefCell<MonoImgproc>>,
 
-    mono_imgproc: MonoImgproc,
-    mono_loaded_frame: Option<ImageBuffer>,
-    gray_loaded_frame: Option<ImageBuffer>,
-
+    loaded_frame_row_hashes: Vec<u64>,  // hash of each row's pixel value of loaded frame
     dirty_rows: RowSet,
     displaying_rows: RowSet,
     full_refreshed: bool,
@@ -82,67 +78,62 @@ impl App {
             source,
             options,
             current_run_mode,
-            mono_imgproc,
-            mono_loaded_frame: None,
-            gray_loaded_frame: None,
+            mono_imgproc: Rc::new(RefCell::new(mono_imgproc)),
+            loaded_frame_row_hashes: Vec::new(),
             dirty_rows: RowSet::default(),
             displaying_rows: RowSet::default(),
             full_refreshed: false,
         }
     }
 
-    // get frame and load into driver,modify display_dirty_range
-    fn load_frame_mono(&mut self) -> anyhow::Result<()> {
+    fn load_frame_generic<ImgprocFn>(&mut self, imgproc_fn: ImgprocFn) -> anyhow::Result<()>
+    where ImgprocFn: FnOnce(&dyn ConstImage) -> ImageBuffer,
+    {
         let screen_size = self.driver.get_screen_size();
         let t_load_start = std::time::Instant::now();
 
         let bgra_img = self.source.get_frame()?;
         let t_got_frame = std::time::Instant::now();
 
-        let mut new_frame = ImageBuffer::new(
-            ImageFormat::Mono1Bpp,
-            screen_size.width,
-            screen_size.height,
-            Some(self.driver.get_mem_pitch(MemMode::Mem1bpp)),
-        );
-        let dithering_method = self.current_run_mode.dithering_method().unwrap();
-        self.mono_imgproc.process(
-            bgra_img.as_ref(),
-            &mut new_frame,
-            dithering_method,
-        );
+        let new_frame = imgproc_fn(bgra_img.as_ref());
         let t_imgproc = std::time::Instant::now();
 
-        let mut modified_range = match &self.mono_loaded_frame {
-            None => RowSet::from_iter(0..screen_size.height),
-            Some(loaded_frame) => compute_modified_row_range(&new_frame, loaded_frame),
+        let new_frame_row_hashes = compute_row_hashes(&new_frame);
+        let mut modified_range = if self.loaded_frame_row_hashes.is_empty() {
+            RowSet::from_iter(0..screen_size.height)
+        } else {
+            compute_modified_rows(&self.loaded_frame_row_hashes, &new_frame_row_hashes)
         };
         if !modified_range.is_empty() {
             let load_subimg = new_frame.subimg(
                 (0, *modified_range.first().unwrap()).into(),
-                (
-                    screen_size.width,
-                    *modified_range.last().unwrap() - modified_range.first().unwrap() + 1,
-                )
-                    .into(),
+                (screen_size.width,
+                 *modified_range.last().unwrap() - modified_range.first().unwrap() + 1).into(),
             );
+            let load_offset = *modified_range.first().unwrap() as u32;
             match self.current_run_mode.mem_mode() {
                 MemMode::Mem1bpp => {
-                    self.driver.load_image_fullwidth_1bpp(
-                        *modified_range.first().unwrap() as u32, &load_subimg)?;
+                    if load_subimg.format() == ImageFormat::Mono1Bpp {
+                        self.driver.load_image_fullwidth_1bpp(load_offset, &load_subimg)?;
+                    } else {
+                        let packed = convert::repack_mono(&load_subimg, ImageFormat::Mono1Bpp,
+                                                          self.driver.get_mem_pitch(MemMode::Mem1bpp));
+                        self.driver.load_image_fullwidth_1bpp(load_offset, &packed)?;
+                    }
                 },
                 MemMode::Mem8bpp => {
-                    let unpacked = convert::repack_mono(
-                        &load_subimg, ImageFormat::Mono8Bpp, self.driver.get_mem_pitch(MemMode::Mem8bpp));
-                    self.driver.load_image_fullwidth_8bpp(
-                        *modified_range.first().unwrap() as u32,
-                        &unpacked,
-                    )?;
+                    if load_subimg.format() == ImageFormat::Mono8Bpp {
+                        self.driver.load_image_fullwidth_8bpp(load_offset, &load_subimg)?;
+                    } else {
+                        let unpacked = convert::repack_mono(&load_subimg, ImageFormat::Mono8Bpp,
+                                                            self.driver.get_mem_pitch(MemMode::Mem8bpp));
+                        self.driver.load_image_fullwidth_8bpp(load_offset, &unpacked)?;
+                    }
                 },
-            };
+            }
             self.dirty_rows.append(&mut modified_range);
             drop(modified_range);
-            self.mono_loaded_frame = Some(new_frame);
+            self.loaded_frame_row_hashes = new_frame_row_hashes;
         }
         let t_loaded = std::time::Instant::now();
 
@@ -154,47 +145,30 @@ impl App {
         Ok(())
     }
 
+    // get frame and load into driver,modify display_dirty_range
+    fn load_frame_mono(&mut self) -> anyhow::Result<()> {
+        let screen_size = self.driver.get_screen_size();
+        let mempitch_1bpp = self.driver.get_mem_pitch(MemMode::Mem1bpp);
+        let dithering_method = self.current_run_mode.dithering_method().unwrap();
+        let mono_imgproc = self.mono_imgproc.clone();
+        self.load_frame_generic(
+            |bgra_img| {
+                let mut new_frame = ImageBuffer::new(ImageFormat::Mono1Bpp, screen_size.width, screen_size.height, Some(mempitch_1bpp));
+                mono_imgproc.borrow_mut().process(bgra_img, &mut new_frame, dithering_method);
+                new_frame
+            }
+        )
+    }
+
     fn load_frame_gray(&mut self) -> anyhow::Result<()> {
         let screen_size = self.driver.get_screen_size();
-        let t_load_start = std::time::Instant::now();
-
-        let bgra_image = self.source.get_frame()?;
-        let t_got_frame = std::time::Instant::now();
-
-        let bgra_image = rotate_image(bgra_image.as_ref(), self.options.rotation, screen_size);
-        let new_frame = dithering::floyd_steinberg(&bgra_image, dithering::GREY16_TARGET_COLOR_SPACE);
-        let t_imgproc = std::time::Instant::now();
-
-        let mut modified_range = match &self.gray_loaded_frame {
-            None => RowSet::from_iter(0..screen_size.height),
-            Some(loaded_frame) => compute_modified_row_range(&new_frame, loaded_frame),
-        };
-        assert_eq!(self.current_run_mode.mem_mode(), MemMode::Mem8bpp);
-        if !modified_range.is_empty() {
-            let load_subimg = new_frame.subimg(
-                (0, *modified_range.first().unwrap()).into(),
-                (
-                    screen_size.width,
-                    *modified_range.last().unwrap() - modified_range.first().unwrap() + 1,
-                )
-                    .into(),
-            );
-            self.driver.load_image_fullwidth_8bpp(
-                *modified_range.first().unwrap() as u32,
-                &load_subimg,
-            )?;
-            self.dirty_rows.append(&mut modified_range);
-            drop(modified_range);
-            self.gray_loaded_frame = Some(new_frame);
-        }
-        let t_loaded = std::time::Instant::now();
-
-        debug!("New gray frame loaded, {} rows dirty accumulated. Cost: get frame: {:?}, imgproc: {:?}, load: {:?}",
-               self.dirty_rows.len(),
-               t_got_frame - t_load_start,
-               t_imgproc - t_got_frame,
-               t_loaded - t_imgproc);
-        Ok(())
+        let rotation = self.options.rotation;
+        self.load_frame_generic(
+            |bgra_img| {
+                let bgra_img = rotate_image(bgra_img, rotation, screen_size);
+                dithering::floyd_steinberg(&bgra_img, dithering::GREY16_TARGET_COLOR_SPACE)
+            }
+        )
     }
 
     // return if current display dirty range is actually not blocked by displaying rows
@@ -277,8 +251,7 @@ impl App {
                     info!("Switching to new run mode: {:?}", new_run_mode);
                     self.poll_display_ready(/* block */ true)?;
                     self.driver.reset_display()?;
-                    self.mono_loaded_frame = None;
-                    self.gray_loaded_frame = None;
+                    self.loaded_frame_row_hashes.clear();
                     self.current_run_mode = new_run_mode;
                 }
             }
