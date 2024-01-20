@@ -63,6 +63,8 @@ for low latency. It's suitable for e.g. PDF reading. You can easily switch betwe
 
 ### Quick start
 
+> In Linux, make sure you have proper permission to access the usb device (e.g. `/dev/ttyUSB0`)
+
 ```
 $ cargo build --release
 $ ./target/release/rabbitink --vcom <vcom value for your eink display, e.g. "2.3">
