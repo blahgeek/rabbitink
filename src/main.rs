@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -34,6 +35,9 @@ struct Args {
     #[arg(long, default_value_t = 10)]
     source_poll_interval: u64,
 
+    #[arg(long, default_value = "mono_bayers4")]
+    run_mode: String,
+
     #[arg(long, default_value = "/tmp/rabbitink_run_mode.config")]
     run_mode_config: std::path::PathBuf,
 }
@@ -44,6 +48,10 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
+
+    let initial_run_mode = rabbitink::run_mode::RunMode::from_str(&args.run_mode)?;
+    let run_mode_config_path = args.run_mode_config;
+    std::fs::write(&run_mode_config_path, args.run_mode)?;
 
     let mut dev = IT8915::open(&args.device)?;
     dev.pmic_control(Some(args.vcom), Some(true))?;
@@ -71,7 +79,10 @@ fn main() -> anyhow::Result<()> {
         AppOptions {
             reload_flag,
             terminate_flag,
-            run_mode_config_path: args.run_mode_config,
+            get_run_mode_callback: Box::new(move || {
+                rabbitink::run_mode::RunMode::read_from_file(&run_mode_config_path)
+                    .unwrap_or(initial_run_mode)
+            }),
             driver_poll_ready_interval: std::time::Duration::from_millis(
                 args.driver_poll_ready_interval,
             ),

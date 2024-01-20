@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use super::imgproc::DitheringMethod;
 use super::driver::it8915::{DisplayMode, MemMode};
 
@@ -11,6 +13,23 @@ pub enum RunMode {
 impl Default for RunMode {
     fn default() -> Self {
         Self::Mono(DitheringMethod::Bayers4)
+    }
+}
+
+impl FromStr for RunMode {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "mono_bayers4" => RunMode::Mono(DitheringMethod::Bayers4),
+            "mono_bayers2" => RunMode::Mono(DitheringMethod::Bayers2),
+            "mono_naive" => RunMode::Mono(DitheringMethod::NoDithering),
+            "mono_8bpp_bayers4" => RunMode::MonoForce8bpp(DitheringMethod::Bayers4),
+            "mono_8bpp_bayers2" => RunMode::MonoForce8bpp(DitheringMethod::Bayers2),
+            "mono_8bpp_naive" => RunMode::MonoForce8bpp(DitheringMethod::NoDithering),
+            "gray" => RunMode::Gray,
+            _ => anyhow::bail!("Unsupported request: {}", s),
+        })
     }
 }
 
@@ -43,16 +62,6 @@ impl RunMode {
 
     pub fn read_from_file(path: &std::path::Path) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)?;
-        let run_mode = match content.trim_end() {
-            "mono_bayers4" => RunMode::Mono(DitheringMethod::Bayers4),
-            "mono_bayers2" => RunMode::Mono(DitheringMethod::Bayers2),
-            "mono_naive" => RunMode::Mono(DitheringMethod::NoDithering),
-            "mono_8bpp_bayers4" => RunMode::MonoForce8bpp(DitheringMethod::Bayers4),
-            "mono_8bpp_bayers2" => RunMode::MonoForce8bpp(DitheringMethod::Bayers2),
-            "mono_8bpp_naive" => RunMode::MonoForce8bpp(DitheringMethod::NoDithering),
-            "gray" => RunMode::Gray,
-            _ => anyhow::bail!("Unsupported request: {}", content),
-        };
-        return Ok(run_mode)
+        Self::from_str(content.trim_end())
     }
 }

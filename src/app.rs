@@ -37,7 +37,7 @@ fn compute_modified_rows(row_hashes_a: &[u64], row_hashes_b: &[u64]) -> RowSet {
 pub struct AppOptions {
     pub reload_flag: Arc<AtomicBool>,
     pub terminate_flag: Arc<AtomicBool>,
-    pub run_mode_config_path: std::path::PathBuf,
+    pub get_run_mode_callback: Box<dyn Fn() -> RunMode>,
 
     pub driver_poll_ready_interval: std::time::Duration,
     pub source_poll_interval: std::time::Duration,
@@ -66,8 +66,7 @@ const SLOW_REFRESH_ROW_RATIO_THRESHOLD: f32 = 0.5; // do a slow (e.g. DU instead
 
 impl App {
     pub fn new(driver: IT8915, source: Box<dyn Source>, options: AppOptions) -> App {
-        let current_run_mode =
-            RunMode::read_from_file(&options.run_mode_config_path).unwrap_or_default();
+        let current_run_mode = (options.get_run_mode_callback)();
         let mono_imgproc = MonoImgproc::new(MonoImgprocOptions {
             rotation: options.rotation,
             input_size: source.frame_size(),
@@ -245,8 +244,7 @@ impl App {
         while !self.options.terminate_flag.swap(false, Ordering::Relaxed) {
             let reload_requested = self.options.reload_flag.swap(false, Ordering::Relaxed);
             if reload_requested {
-                let new_run_mode =
-                    RunMode::read_from_file(&self.options.run_mode_config_path).unwrap_or_default();
+                let new_run_mode = (self.options.get_run_mode_callback)();
                 if new_run_mode != self.current_run_mode {
                     info!("Switching to new run mode: {:?}", new_run_mode);
                     self.poll_display_ready(/* block */ true)?;
