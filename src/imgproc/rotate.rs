@@ -17,13 +17,14 @@ impl Rotation {
     }
 }
 
-pub fn rotate<const BPP: i32, T: ConstImage<BPP> + ?Sized>(
+pub fn rotate<T: ConstImage + ?Sized>(
     input_img: &T,
     rotation: Rotation,
     output_size: Size,
-) -> ImageBuffer<BPP> {
-    assert!(BPP % 8 == 0, "Does not support non-byte-aligned image");
-    let mut output_img = ImageBuffer::<BPP>::new(output_size.width, output_size.height, None);
+) -> ImageBuffer {
+    let bpp = input_img.bpp();
+    assert!(bpp % 8 == 0, "Does not support non-byte-aligned image");
+    let mut output_img = ImageBuffer::new(input_img.format(), output_size.width, output_size.height, None);
 
     let transform = |x: i32, y: i32| -> (i32, i32) {
         match rotation {
@@ -46,9 +47,9 @@ pub fn rotate<const BPP: i32, T: ConstImage<BPP> + ?Sized>(
                 let input_row_ptr = input_img.ptr(input_y);
                 unsafe {
                     std::ptr::copy(
-                        input_row_ptr.add((input_x * BPP / 8) as usize),
-                        row_ptr.add((x * BPP / 8) as usize),
-                        (BPP / 8) as usize,
+                        input_row_ptr.add((input_x * bpp / 8) as usize),
+                        row_ptr.add((x * bpp / 8) as usize),
+                        (bpp / 8) as usize,
                     );
                 }
             }
@@ -65,7 +66,7 @@ mod tests {
     #[test]
     fn test_rotate90() {
         let input_img_data: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-        let input_img = ConstImageView::<16>::new(input_img_data.as_slice(), 2, 3, None);
+        let input_img = ConstImageView::new(ImageFormat::DoubleByte, input_img_data.as_slice(), 2, 3, None);
 
         let output_img = rotate(&input_img, Rotation::Rotate90, (4, 3).into());
         assert_eq!(output_img.size(), (4, 3).into());

@@ -194,7 +194,8 @@ impl IT8915 {
     }
 
     pub fn reset_display(&mut self) -> anyhow::Result<()> {
-        let mut white_img = ImageBuffer::<1>::new(
+        let mut white_img = ImageBuffer::new(
+            ImageFormat::Mono1Bpp,
             self.get_screen_size().width,
             self.get_screen_size().height,
             Some(self.mem_pitch_1bpp as i32),
@@ -296,16 +297,16 @@ impl IT8915 {
         Ok(())
     }
 
-    fn load_image_fullwidth_generic<const BPP: i32, IMG: ConstImage<BPP>>(
+    fn load_image_fullwidth_generic(
         &mut self,
         row_offset: u32,
-        image: &IMG,
+        image: &impl ConstImage,
         pitch: u32,
     ) -> anyhow::Result<()> {
         trace!(
-            "Loading image fullwidth to row {}, BPP {}, image size={:?}",
+            "Loading image fullwidth to row {}, format {:?}, image size={:?}",
             row_offset,
-            BPP,
+            image.format(),
             image.size()
         );
         assert_eq!(image.width(), self.get_screen_size().width);
@@ -334,8 +335,9 @@ impl IT8915 {
     pub fn load_image_fullwidth_1bpp(
         &mut self,
         row_offset: u32,
-        image: &impl ConstImage<1>,
+        image: &impl ConstImage,
     ) -> anyhow::Result<()> {
+        assert_eq!(image.format(), ImageFormat::Mono1Bpp);
         assert_eq!(image.pitch(), self.mem_pitch_1bpp as i32);
         self.last_load_mem_mode = MemMode::Mem1bpp;
         self.load_image_fullwidth_generic(row_offset, image, self.mem_pitch_1bpp)
@@ -344,8 +346,9 @@ impl IT8915 {
     pub fn load_image_fullwidth_8bpp(
         &mut self,
         row_offset: u32,
-        image: &impl ConstImage<8>,
+        image: &impl ConstImage,
     ) -> anyhow::Result<()> {
+        assert_eq!(image.format(), ImageFormat::Mono8Bpp);
         assert_eq!(image.pitch(), self.mem_pitch_8bpp as i32);
         self.last_load_mem_mode = MemMode::Mem8bpp;
         self.load_image_fullwidth_generic(row_offset, image, self.mem_pitch_8bpp)

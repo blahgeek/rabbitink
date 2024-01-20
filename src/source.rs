@@ -10,7 +10,7 @@ use crate::image::*;
 
 pub trait Source {
     // return BGRA
-    fn get_frame(&mut self) -> anyhow::Result<Box<dyn ConstImage<32> + '_>>;
+    fn get_frame(&mut self) -> anyhow::Result<Box<dyn ConstImage + '_>>;
     fn frame_size(&self) -> Size;
 }
 

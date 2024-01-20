@@ -34,29 +34,49 @@ where
     }
 }
 
-fn minimum_pitch<const BPP: i32>(width: i32) -> i32 {
-    (width * BPP + 7) / 8
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ImageFormat {
+    Mono1Bpp,  // mono, 1 bit per pixel
+    Mono8Bpp,  // mono, 8 bits per pixel
+    BGRA,      // BGRA, 32 bits per pixel
+    DoubleByte, // 16 bits per pixel, mostly testing
+}
+
+impl ImageFormat {
+    pub fn bpp(&self) -> i32 {
+        match self {
+            Self::Mono1Bpp => 1,
+            Self::Mono8Bpp => 8,
+            Self::BGRA => 32,
+            Self::DoubleByte => 16,
+        }
+    }
+}
+
+fn minimum_pitch(bpp: i32, width: i32) -> i32 {
+    (width * bpp + 7) / 8
 }
 
 
 #[derive(Clone, Copy, Debug)]
-pub struct ImageHeader<const BPP: i32> {
+pub struct ImageHeader {
     data_len: usize,
+    format: ImageFormat,
     width: i32,
     pitch: i32,
     height: i32,
 }
 
-impl<const BPP: i32> ImageHeader<BPP> {
-    pub fn new(data_len: usize, width: i32, height: i32, pitch: Option<i32>) -> Self {
-        let minimum_pitch = minimum_pitch::<BPP>(width);
+impl ImageHeader {
+    pub fn new(format: ImageFormat, data_len: usize, width: i32, height: i32, pitch: Option<i32>) -> Self {
+        let minimum_pitch = minimum_pitch(format.bpp(), width);
         let pitch = pitch.unwrap_or(minimum_pitch);
         assert!(
             pitch >= minimum_pitch,
-            "invalid pitch {} for width {} with {} bits-per-pixel",
+            "invalid pitch {} for width {} with format {:?}",
             pitch,
             width,
-            BPP
+            format
         );
         assert!(
             width > 0 && height > 0,
@@ -73,6 +93,7 @@ impl<const BPP: i32> ImageHeader<BPP> {
         );
         ImageHeader {
             data_len,
+            format,
             width,
             pitch,
             height,
@@ -80,13 +101,14 @@ impl<const BPP: i32> ImageHeader<BPP> {
     }
 
     fn subimg(&self, pt: Point, size: Size) -> (Self, usize) {
-        assert!((pt.x * BPP) % 8 == 0);
+        assert!((pt.x * self.format.bpp()) % 8 == 0);
         assert!(pt.x >= 0 && pt.x < self.width && pt.x + size.width <= self.width);
         assert!(pt.y >= 0 && pt.y < self.height && pt.y + size.height <= self.height);
-        let offset = (pt.y * self.pitch + pt.x * BPP / 8) as usize;
+        let offset = (pt.y * self.pitch + pt.x * self.format.bpp() / 8) as usize;
         (
             Self {
                 data_len: self.data_len - offset,
+                format: self.format,
                 width: size.width,
                 pitch: self.pitch,
                 height: size.height,
@@ -96,13 +118,19 @@ impl<const BPP: i32> ImageHeader<BPP> {
     }
 }
 
-pub trait HasImageHeader<const BPP: i32> {
-    fn header(&self) -> ImageHeader<BPP>;
+pub trait HasImageHeader {
+    fn header(&self) -> ImageHeader;
 }
 
-pub trait ConstImage<const BPP: i32>: HasImageHeader<BPP> {
+pub trait ConstImage: HasImageHeader {
     fn data(&self) -> &[u8];
 
+    fn bpp(&self) -> i32 {
+        self.header().format.bpp()
+    }
+    fn format(&self) -> ImageFormat {
+        self.header().format
+    }
     fn width(&self) -> i32 {
         self.header().width
     }
@@ -113,7 +141,7 @@ pub trait ConstImage<const BPP: i32>: HasImageHeader<BPP> {
         self.header().pitch
     }
     fn is_continuous(&self) -> bool {
-        self.pitch() == minimum_pitch::<BPP>(self.width())
+        self.pitch() == minimum_pitch(self.bpp(), self.width())
     }
     fn size(&self) -> Size {
         (self.width(), self.height()).into()
@@ -121,32 +149,39 @@ pub trait ConstImage<const BPP: i32>: HasImageHeader<BPP> {
     fn ptr(&self, row: i32) -> *const u8 {
         self.data()[((row * self.pitch()) as usize)..].as_ptr()
     }
-    fn subimg(&self, pt: Point, size: Size) -> ConstImageView<BPP> {
+    fn subimg(&self, pt: Point, size: Size) -> ConstImageView {
         let (sub_hdr, offset) = self.header().subimg(pt, size);
         ConstImageView {
             header: sub_hdr,
             data: &self.data()[offset..],
         }
     }
+    fn view(&self) -> ConstImageView {
+        ConstImageView {
+            header: self.header(),
+            data: self.data(),
+        }
+    }
+
 }
 
-pub trait Image<const BPP: i32>: ConstImage<BPP> {
+pub trait Image: ConstImage {
     fn mut_data(&mut self) -> &mut [u8];
 
     fn mut_ptr(&mut self, row: i32) -> *mut u8 {
         let offset = (row * self.pitch()) as usize;
         self.mut_data()[offset..].as_mut_ptr()
     }
-    fn mut_subimg(&mut self, pt: Point, size: Size) -> ImageView<BPP> {
+    fn mut_subimg(&mut self, pt: Point, size: Size) -> ImageView {
         let (sub_hdr, offset) = self.header().subimg(pt, size);
         ImageView {
             header: sub_hdr,
             data: &mut self.mut_data()[offset..],
         }
     }
-    fn copy_from<T: ConstImage<BPP> + ?Sized>(&mut self, src: &T) {
+    fn copy_from<T: ConstImage + ?Sized>(&mut self, src: &T) {
         assert_eq!(self.size(), src.size());
-        let copy_len = minimum_pitch::<BPP>(self.width()) as usize;
+        let copy_len = minimum_pitch(self.bpp(), self.width()) as usize;
         for y in 0..self.height() {
             let dst_slice = unsafe { std::slice::from_raw_parts_mut(self.mut_ptr(y), copy_len) };
             let src_slice = unsafe { std::slice::from_raw_parts(src.ptr(y), copy_len) };
@@ -160,104 +195,97 @@ pub trait Image<const BPP: i32>: ConstImage<BPP> {
             slice.fill(val);
         }
     }
+
+    fn mut_view(&mut self) -> ImageView {
+        ImageView {
+            header: self.header(),
+            data: self.mut_data(),
+        }
+    }
 }
 
-pub struct ConstImageView<'a, const BPP: i32> {
-    header: ImageHeader<BPP>,
+pub struct ConstImageView<'a> {
+    header: ImageHeader,
     data: &'a [u8],
 }
 
-impl<'a, const BPP: i32> ConstImageView<'a, BPP> {
-    pub fn new(data: &'a [u8], width: i32, height: i32, pitch: Option<i32>) -> Self {
-        let header = ImageHeader::<BPP>::new(data.len(), width, height, pitch);
+impl<'a> ConstImageView<'a> {
+    pub fn new(format: ImageFormat, data: &'a [u8], width: i32, height: i32, pitch: Option<i32>) -> Self {
+        let header = ImageHeader::new(format, data.len(), width, height, pitch);
         ConstImageView { header, data }
     }
 }
 
-impl<'a, const BPP: i32> HasImageHeader<BPP> for ConstImageView<'a, BPP> {
-    fn header(&self) -> ImageHeader<BPP> {
+impl<'a> HasImageHeader for ConstImageView<'a> {
+    fn header(&self) -> ImageHeader {
         self.header
     }
 }
 
-impl<'a, const BPP: i32> ConstImage<BPP> for ConstImageView<'a, BPP> {
+impl<'a> ConstImage for ConstImageView<'a> {
     fn data(&self) -> &[u8] {
         self.data
     }
 }
 
-pub struct ImageView<'a, const BPP: i32> {
-    header: ImageHeader<BPP>,
+pub struct ImageView<'a> {
+    header: ImageHeader,
     data: &'a mut [u8],
 }
 
-impl<'a, const BPP: i32> ImageView<'a, BPP> {
-    pub fn new(data: &'a mut [u8], width: i32, height: i32, pitch: Option<i32>) -> Self {
-        let header = ImageHeader::<BPP>::new(data.len(), width, height, pitch);
+impl<'a> ImageView<'a> {
+    pub fn new(format: ImageFormat, data: &'a mut [u8], width: i32, height: i32, pitch: Option<i32>) -> Self {
+        let header = ImageHeader::new(format, data.len(), width, height, pitch);
         ImageView { header, data }
     }
 }
 
-impl<'a, const BPP: i32> HasImageHeader<BPP> for ImageView<'a, BPP> {
-    fn header(&self) -> ImageHeader<BPP> {
+impl<'a> HasImageHeader for ImageView<'a> {
+    fn header(&self) -> ImageHeader {
         self.header
     }
 }
 
-impl<'a, const BPP: i32> ConstImage<BPP> for ImageView<'a, BPP> {
+impl<'a> ConstImage for ImageView<'a> {
     fn data(&self) -> &[u8] {
         self.data
     }
 }
 
-impl<'a, const BPP: i32> Image<BPP> for ImageView<'a, BPP> {
+impl<'a> Image for ImageView<'a> {
     fn mut_data(&mut self) -> &mut [u8] {
         self.data
     }
 }
 
-pub struct ImageBuffer<const BPP: i32> {
+pub struct ImageBuffer {
     data: Vec<u8>,
-    header: ImageHeader<BPP>,
+    header: ImageHeader,
 }
 
-impl<const BPP: i32> ImageBuffer<BPP> {
-    pub fn new(width: i32, height: i32, pitch: Option<i32>) -> Self {
-        let minimum_pitch = minimum_pitch::<BPP>(width);
+impl ImageBuffer {
+    pub fn new(format: ImageFormat, width: i32, height: i32, pitch: Option<i32>) -> Self {
+        let minimum_pitch = minimum_pitch(format.bpp(), width);
         let pitch = pitch.unwrap_or(minimum_pitch);
         let data = vec![0; (pitch * height) as usize];
-        let header = ImageHeader::<BPP>::new(data.len(), width, height, Some(pitch));
+        let header = ImageHeader::new(format, data.len(), width, height, Some(pitch));
         Self { data, header }
-    }
-
-    pub fn view(&self) -> ConstImageView<BPP> {
-        ConstImageView {
-            header: self.header,
-            data: self.data.as_slice(),
-        }
-    }
-
-    pub fn mut_view(&mut self) -> ImageView<BPP> {
-        ImageView {
-            header: self.header,
-            data: self.data.as_mut_slice(),
-        }
     }
 }
 
-impl<const BPP: i32> HasImageHeader<BPP> for ImageBuffer<BPP> {
-    fn header(&self) -> ImageHeader<BPP> {
+impl HasImageHeader for ImageBuffer {
+    fn header(&self) -> ImageHeader {
         self.header
     }
 }
 
-impl<const BPP: i32> ConstImage<BPP> for ImageBuffer<BPP> {
+impl ConstImage for ImageBuffer {
     fn data(&self) -> &[u8] {
         self.data.as_slice()
     }
 }
 
-impl<const BPP: i32> Image<BPP> for ImageBuffer<BPP> {
+impl Image for ImageBuffer {
     fn mut_data(&mut self) -> &mut [u8] {
         self.data.as_mut_slice()
     }
@@ -269,7 +297,7 @@ mod tests {
 
     #[test]
     fn test_1bpp() {
-        let mut buf = ImageBuffer::<1>::new(100, 100, None);
+        let mut buf = ImageBuffer::new(ImageFormat::Mono1Bpp, 100, 100, None);
         let view = buf.mut_view();
         assert_eq!(view.width(), 100);
         assert_eq!(view.height(), 100);

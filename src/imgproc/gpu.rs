@@ -198,12 +198,14 @@ impl MonoImgproc {
         receiver.recv().unwrap();
     }
 
-    fn write_input<T: ConstImage<32> + ?Sized>(&self, input_img: &T) {
+    fn write_input<T: ConstImage + ?Sized>(&self, input_img: &T) {
+        assert_eq!(input_img.format(), ImageFormat::BGRA);
         assert_eq!(input_img.size(), self.opts.input_size);
         let slice = self.input_stage_buffer.slice(..);
         self.map_buffer_sync(&slice, wgpu::MapMode::Write);
         let mut stage_buf = slice.get_mapped_range_mut();
-        let mut stage_buf_img = ImageView::<32>::new(
+        let mut stage_buf_img = ImageView::new(
+            ImageFormat::BGRA,
             &mut stage_buf,
             self.opts.input_size.width,
             self.opts.input_size.height,
@@ -214,12 +216,14 @@ impl MonoImgproc {
         self.input_stage_buffer.unmap();
     }
 
-    fn read_output<T: Image<1> + ?Sized>(&self, output_img: &mut T) {
+    fn read_output<T: Image + ?Sized>(&self, output_img: &mut T) {
+        assert_eq!(output_img.format(), ImageFormat::Mono1Bpp);
         assert_eq!(output_img.size(), self.opts.output_size);
         let slice = self.output_stage_buffer.slice(..);
         self.map_buffer_sync(&slice, wgpu::MapMode::Read);
         let output_buf = slice.get_mapped_range();
-        let output_buf_img = ConstImageView::<1>::new(
+        let output_buf_img = ConstImageView::new(
+            ImageFormat::Mono1Bpp,
             &output_buf,
             self.opts.output_size.width,
             self.opts.output_size.height,
@@ -234,7 +238,7 @@ impl MonoImgproc {
         pollster::block_on(Self::new_async(options))
     }
 
-    pub fn process<InputT: ConstImage<32> + ?Sized, OutputT: Image<1> + ?Sized>(
+    pub fn process<InputT: ConstImage + ?Sized, OutputT: Image + ?Sized>(
         &mut self,
         input_img: &InputT,
         output_img: &mut OutputT,
@@ -323,11 +327,11 @@ mod tests {
             }
             v
         };
-        let color_img = ConstImageView::<32>::new(input_img_data.as_slice(), 32, 1, None);
+        let color_img = ConstImageView::new(ImageFormat::BGRA, input_img_data.as_slice(), 32, 1, None);
 
         {
             let mut output_img_data: Vec<u8> = vec![0; 4];
-            let mut output_img = ImageView::<1>::new(output_img_data.as_mut_slice(), 32, 1, None);
+            let mut output_img = ImageView::new(ImageFormat::Mono1Bpp, output_img_data.as_mut_slice(), 32, 1, None);
 
             let mut imgproc = MonoImgproc::new(MonoImgprocOptions {
                 input_size: color_img.size(),
@@ -346,7 +350,7 @@ mod tests {
 
         {
             let mut output_img_data: Vec<u8> = vec![0; 4];
-            let mut output_img = ImageView::<1>::new(output_img_data.as_mut_slice(), 32, 1, None);
+            let mut output_img = ImageView::new(ImageFormat::Mono1Bpp, output_img_data.as_mut_slice(), 32, 1, None);
 
             let mut imgproc = MonoImgproc::new(MonoImgprocOptions {
                 input_size: color_img.size(),
@@ -373,7 +377,7 @@ mod tests {
             }
             v
         };
-        let color_img = ConstImageView::<32>::new(input_img_data.as_slice(), 2048, 1024, None);
+        let color_img = ConstImageView::new(ImageFormat::BGRA, input_img_data.as_slice(), 2048, 1024, None);
 
         let mut output_img_data: Vec<u8> = vec![0; 256*1024];
         let mut imgproc = MonoImgproc::new(MonoImgprocOptions {
@@ -382,7 +386,7 @@ mod tests {
             rotation: Rotation::NoRotation,
         });
         for _ in 0..10 {
-            let mut output_img = ImageView::<1>::new(output_img_data.as_mut_slice(), 2048, 1024, None);
+            let mut output_img = ImageView::new(ImageFormat::Mono1Bpp, output_img_data.as_mut_slice(), 2048, 1024, None);
             output_img.fill(0);
             imgproc.process(&color_img, &mut output_img, DitheringMethod::Bayers4);
             drop(output_img);
@@ -403,11 +407,11 @@ mod tests {
             v
         };
         // a (4, 32) image
-        let color_img = ConstImageView::<32>::new(input_img_data.as_slice(), 4, 32, None);
+        let color_img = ConstImageView::new(ImageFormat::BGRA, input_img_data.as_slice(), 4, 32, None);
 
         // output a (32, 4) image
         let mut output_img_data: Vec<u8> = vec![0; 16];
-        let mut output_img = ImageView::<1>::new(output_img_data.as_mut_slice(), 32, 4, Some(4));
+        let mut output_img = ImageView::new(ImageFormat::Mono1Bpp, output_img_data.as_mut_slice(), 32, 4, Some(4));
 
         let mut imgproc = MonoImgproc::new(MonoImgprocOptions {
             input_size: color_img.size(),
@@ -427,7 +431,7 @@ mod tests {
     fn test_rot90_with_mismatched_size() {
         // (8, 32) image, (0, 3) is black
         let color_img = {
-            let mut color_img = ImageBuffer::<32>::new(8, 32, None);
+            let mut color_img = ImageBuffer::new(ImageFormat::BGRA, 8, 32, None);
             color_img.fill(0xff);
             unsafe {
                 *color_img.mut_ptr(0).add(3 * 4) = 0;
@@ -440,7 +444,7 @@ mod tests {
 
         // output a (32, 4) image
         let mut output_img_data: Vec<u8> = vec![0; 16];
-        let mut output_img = ImageView::<1>::new(output_img_data.as_mut_slice(), 32, 4, Some(4));
+        let mut output_img = ImageView::new(ImageFormat::Mono1Bpp, output_img_data.as_mut_slice(), 32, 4, Some(4));
 
         let mut imgproc = MonoImgproc::new(MonoImgprocOptions {
             input_size: color_img.size(),

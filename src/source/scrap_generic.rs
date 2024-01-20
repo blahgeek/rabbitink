@@ -4,18 +4,18 @@ use super::Source;
 use crate::image::*;
 
 struct FrameAdapter<'a> {
-    header: ImageHeader<32>,
+    header: ImageHeader,
     frame: scrap::Frame<'a>,
     data_offset: usize,
 }
 
-impl<'a> HasImageHeader<32> for FrameAdapter<'a> {
-    fn header(&self) -> ImageHeader<32> {
+impl<'a> HasImageHeader for FrameAdapter<'a> {
+    fn header(&self) -> ImageHeader {
         self.header
     }
 }
 
-impl<'a> ConstImage<32> for FrameAdapter<'a> {
+impl<'a> ConstImage for FrameAdapter<'a> {
     fn data(&self) -> &[u8] {
         &self.frame[self.data_offset..]
     }
@@ -80,7 +80,7 @@ impl Source for ScrapGenericSource {
         self.size
     }
 
-    fn get_frame(&mut self) -> anyhow::Result<Box<dyn ConstImage<32> + '_>> {
+    fn get_frame(&mut self) -> anyhow::Result<Box<dyn ConstImage + '_>> {
         let (frame_w, frame_h) = (self.capture.width() as i32, self.capture.height() as i32);
         let frame = self.capture.frame()?;
         let pitch = frame.len() as i32 / frame_h;
@@ -88,7 +88,8 @@ impl Source for ScrapGenericSource {
 
         let data_offset = (self.top_left.y * pitch + self.top_left.x * 4) as usize;
         Ok(Box::new(FrameAdapter {
-            header: ImageHeader::<32>::new(
+            header: ImageHeader::new(
+                ImageFormat::BGRA,
                 frame.len() as usize - data_offset,
                 self.size.width,
                 self.size.height,

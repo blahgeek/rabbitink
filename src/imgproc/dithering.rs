@@ -32,8 +32,9 @@ fn bgra_to_gray(bgra: *const u8) -> u8 {
     }
 }
 
-pub fn floyd_steinberg(bgra_src: &impl ConstImage<32>, target_color_space: TargetColorSpace) -> ImageBuffer<8> {
-    let mut dst: ImageBuffer<8> = ImageBuffer::new(bgra_src.width(), bgra_src.height(), None);
+pub fn floyd_steinberg(bgra_src: &impl ConstImage, target_color_space: TargetColorSpace) -> ImageBuffer {
+    assert_eq!(bgra_src.format(), ImageFormat::BGRA);
+    let mut dst: ImageBuffer = ImageBuffer::new(ImageFormat::Mono8Bpp, bgra_src.width(), bgra_src.height(), None);
 
     let mut current_row_additions: Vec<i32> = vec![0; (bgra_src.width() as usize) + 1];
     let mut next_row_additions: Vec<i32> = vec![0; (bgra_src.width() as usize) + 1];

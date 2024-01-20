@@ -12,12 +12,13 @@ use super::source::Source;
 
 type RowSet = std::collections::BTreeSet<i32>;
 
-fn compute_modified_row_range<const BPP: i32>(
-    m_a: &impl ConstImage<BPP>,
-    m_b: &impl ConstImage<BPP>,
+fn compute_modified_row_range(
+    m_a: &impl ConstImage,
+    m_b: &impl ConstImage,
 ) -> RowSet {
     assert_eq!(m_a.size(), m_b.size());
     assert_eq!(m_a.pitch(), m_b.pitch());
+    assert_eq!(m_a.format(), m_b.format());
 
     let modified_rows = (0..m_a.height()).filter(|y| {
         let y = *y;
@@ -53,8 +54,8 @@ pub struct App {
     current_run_mode: RunMode,
 
     mono_imgproc: MonoImgproc,
-    mono_loaded_frame: Option<ImageBuffer<1>>,
-    gray_loaded_frame: Option<ImageBuffer<8>>,
+    mono_loaded_frame: Option<ImageBuffer>,
+    gray_loaded_frame: Option<ImageBuffer>,
 
     dirty_rows: RowSet,
     displaying_rows: RowSet,
@@ -98,7 +99,8 @@ impl App {
         let bgra_img = self.source.get_frame()?;
         let t_got_frame = std::time::Instant::now();
 
-        let mut new_frame = ImageBuffer::<1>::new(
+        let mut new_frame = ImageBuffer::new(
+            ImageFormat::Mono1Bpp,
             screen_size.width,
             screen_size.height,
             Some(self.driver.get_mem_pitch(MemMode::Mem1bpp)),
@@ -130,8 +132,8 @@ impl App {
                         *modified_range.first().unwrap() as u32, &load_subimg)?;
                 },
                 MemMode::Mem8bpp => {
-                    let unpacked = convert::repack_mono::<1, 8>(
-                        &load_subimg, self.driver.get_mem_pitch(MemMode::Mem8bpp));
+                    let unpacked = convert::repack_mono(
+                        &load_subimg, ImageFormat::Mono8Bpp, self.driver.get_mem_pitch(MemMode::Mem8bpp));
                     self.driver.load_image_fullwidth_8bpp(
                         *modified_range.first().unwrap() as u32,
                         &unpacked,

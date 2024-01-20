@@ -62,7 +62,7 @@ fn main() -> anyhow::Result<()> {
 
     // convert to my own image
     let mut img =
-        ImageBuffer::<32>::new(img_x.width() as i32, img_x.height() as i32, None);
+        ImageBuffer::new(ImageFormat::BGRA, img_x.width() as i32, img_x.height() as i32, None);
     for y in 0..img.height() {
         let ptr = img.mut_ptr(y);
         for x in 0..img.width() {
@@ -77,7 +77,7 @@ fn main() -> anyhow::Result<()> {
     let gray_img = dithering::floyd_steinberg(&img, dithering::GREY16_TARGET_COLOR_SPACE);
 
     if args.use_1bpp {
-        let img = convert::repack_mono::<8, 1>(&gray_img, dev.get_mem_pitch(MemMode::Mem1bpp));
+        let img = convert::repack_mono(&gray_img, ImageFormat::Mono1Bpp, dev.get_mem_pitch(MemMode::Mem1bpp));
         dev.load_image_fullwidth_1bpp(0, &img)?;
     } else {
         dev.load_image_fullwidth_8bpp(0, &gray_img)?;

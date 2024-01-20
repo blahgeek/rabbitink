@@ -1,5 +1,5 @@
 use clap::Parser;
-use rabbitink::driver::it8915::{IT8915, DisplayMode, MemMode};
+use rabbitink::driver::it8915::{IT8915, DisplayMode};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -27,7 +27,7 @@ fn main() -> anyhow::Result<()> {
     }
     println!("Temperature: {}", dev.read_temperature()?);
 
-    dev.display_area((0, 0).into(), dev.get_screen_size(), args.mode, MemMode::Mem1bpp, true)?;
+    dev.display_area((0, 0).into(), dev.get_screen_size(), args.mode, true)?;
     println!("{:?}", dev.read_current_waveform()?);
 
     Ok(())

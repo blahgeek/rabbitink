@@ -12,7 +12,7 @@ fn main() -> anyhow::Result<()> {
         .decode()?
         .into_rgba8();
     let mut src_img =
-        ImageBuffer::<32>::new(src_img_x.width() as i32, src_img_x.height() as i32, None);
+        ImageBuffer::new(ImageFormat::BGRA, src_img_x.width() as i32, src_img_x.height() as i32, None);
 
     for y in 0..src_img.height() {
         let ptr = src_img.mut_ptr(y);
@@ -25,7 +25,7 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    let mut dst_img = ImageBuffer::<1>::new(src_img.width(), src_img.height(), None);
+    let mut dst_img = ImageBuffer::new(ImageFormat::Mono1Bpp, src_img.width(), src_img.height(), None);
 
     let mut imgproc = MonoImgproc::new(MonoImgprocOptions {
         input_size: src_img.size(),

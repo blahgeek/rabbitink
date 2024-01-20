@@ -58,11 +58,11 @@ pub struct XcbGrabSource {
     top_left: Point,
     size: Size,
 
-    screensave_img: ImageBuffer<32>,
+    screensave_img: ImageBuffer,
 }
 
-fn make_screensave_img(size: Size) -> ImageBuffer<32> {
-    let mut img = ImageBuffer::<32>::new(size.width, size.height, None);
+fn make_screensave_img(size: Size) -> ImageBuffer {
+    let mut img = ImageBuffer::new(ImageFormat::BGRA, size.width, size.height, None);
     img.fill(0xff);
     return img;
 }
@@ -145,7 +145,7 @@ impl XcbGrabSource {
 
     fn draw_cursor(
         &self,
-        img: &mut impl Image<32>,
+        img: &mut impl Image,
         cursor_image: xcb::xfixes::GetCursorImageReply,
     ) {
         let cx = cursor_image.x() as i32 - cursor_image.xhot() as i32;
@@ -198,7 +198,7 @@ impl Source for XcbGrabSource {
         self.size
     }
 
-    fn get_frame(&mut self) -> anyhow::Result<Box<dyn ConstImage<32> + '_>> {
+    fn get_frame(&mut self) -> anyhow::Result<Box<dyn ConstImage + '_>> {
         let screensaver_query_cookie = self.conn.send_request(&xcb::screensaver::QueryInfo {
             drawable: xcb::x::Drawable::Window(self.window),
         });
@@ -231,7 +231,8 @@ impl Source for XcbGrabSource {
         if cursor.same_screen() {
             let cursor_image_cookie = self.conn.send_request(&xcb::xfixes::GetCursorImage {});
             let cursor_image = self.conn.wait_for_reply(cursor_image_cookie)?;
-            let mut image = ImageView::<32>::new(
+            let mut image = ImageView::new(
+                ImageFormat::BGRA,
                 self.shmem.mut_slice(),
                 self.size.width,
                 self.size.height,
@@ -240,7 +241,8 @@ impl Source for XcbGrabSource {
             self.draw_cursor(&mut image, cursor_image);
         }
 
-        Ok(Box::new(ConstImageView::<32>::new(
+        Ok(Box::new(ConstImageView::new(
+            ImageFormat::BGRA,
             self.shmem.slice(),
             self.size.width,
             self.size.height,
